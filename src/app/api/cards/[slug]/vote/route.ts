@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '@/lib/db';
+import { getAsyncDb } from '@/lib/db/async-db';
 import { voteOnCard, getUserVote } from '@/lib/db/cards';
 import { getSession } from '@/lib/auth';
+import { parseBody, VoteSchema } from '@/lib/validations';
 
 /**
  * POST /api/cards/[slug]/vote
@@ -23,21 +24,14 @@ export async function POST(
       );
     }
 
-    // Parse request body
-    const body = await request.json();
-    const vote = body.vote as number;
-
-    // Validate vote value
-    if (vote !== 1 && vote !== -1) {
-      return NextResponse.json(
-        { error: 'Vote must be 1 (upvote) or -1 (downvote)' },
-        { status: 400 }
-      );
-    }
+    // Parse and validate request body
+    const parsed = await parseBody(request, VoteSchema);
+    if ('error' in parsed) return parsed.error;
+    const { vote } = parsed.data;
 
     // Get card ID from slug
-    const db = getDb();
-    const card = db.prepare('SELECT id FROM cards WHERE slug = ?').get(slug) as { id: string } | undefined;
+    const db = getAsyncDb();
+    const card = await db.prepare('SELECT id FROM cards WHERE slug = ?').get<{ id: string }>(slug);
 
     if (!card) {
       return NextResponse.json(
@@ -47,22 +41,22 @@ export async function POST(
     }
 
     // Perform vote
-    voteOnCard(session.user.id, card.id, vote);
+    await voteOnCard(session.user.id, card.id, vote);
 
     // Get updated vote counts
-    const updated = db.prepare('SELECT upvotes, downvotes FROM cards WHERE id = ?').get(card.id) as {
+    const updated = await db.prepare('SELECT upvotes, downvotes FROM cards WHERE id = ?').get<{
       upvotes: number;
       downvotes: number;
-    };
+    }>(card.id);
 
     // Get user's current vote
-    const userVote = getUserVote(session.user.id, card.id);
+    const userVote = await getUserVote(session.user.id, card.id);
 
     return NextResponse.json({
       success: true,
       data: {
-        upvotes: updated.upvotes,
-        downvotes: updated.downvotes,
+        upvotes: updated?.upvotes || 0,
+        downvotes: updated?.downvotes || 0,
         userVote,
       },
     });
@@ -96,8 +90,8 @@ export async function DELETE(
     }
 
     // Get card ID from slug
-    const db = getDb();
-    const card = db.prepare('SELECT id FROM cards WHERE slug = ?').get(slug) as { id: string } | undefined;
+    const db = getAsyncDb();
+    const card = await db.prepare('SELECT id FROM cards WHERE slug = ?').get<{ id: string }>(slug);
 
     if (!card) {
       return NextResponse.json(
@@ -107,24 +101,24 @@ export async function DELETE(
     }
 
     // Get current vote
-    const existingVote = getUserVote(session.user.id, card.id);
+    const existingVote = await getUserVote(session.user.id, card.id);
 
     if (existingVote) {
       // Remove vote by voting the same way (toggles off)
-      voteOnCard(session.user.id, card.id, existingVote as 1 | -1);
+      await voteOnCard(session.user.id, card.id, existingVote as 1 | -1);
     }
 
     // Get updated vote counts
-    const updated = db.prepare('SELECT upvotes, downvotes FROM cards WHERE id = ?').get(card.id) as {
+    const updated = await db.prepare('SELECT upvotes, downvotes FROM cards WHERE id = ?').get<{
       upvotes: number;
       downvotes: number;
-    };
+    }>(card.id);
 
     return NextResponse.json({
       success: true,
       data: {
-        upvotes: updated.upvotes,
-        downvotes: updated.downvotes,
+        upvotes: updated?.upvotes || 0,
+        downvotes: updated?.downvotes || 0,
         userVote: null,
       },
     });

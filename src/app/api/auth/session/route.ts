@@ -4,7 +4,7 @@ import { getSessionById, ensureAdminUser, SESSION_COOKIE_NAME } from '@/lib/auth
 export async function GET(request: NextRequest) {
   try {
     // Ensure admin user exists on every session check
-    ensureAdminUser();
+    await ensureAdminUser();
 
     const sessionId = request.cookies.get(SESSION_COOKIE_NAME)?.value;
 
@@ -12,7 +12,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ user: null });
     }
 
-    const result = getSessionById(sessionId);
+    const result = await getSessionById(sessionId);
 
     if (!result) {
       const response = NextResponse.json({ user: null });

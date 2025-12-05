@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '@/lib/db';
+import { getAsyncDb } from '@/lib/db/async-db';
 import { getCardVersions } from '@/lib/db/cards';
 
 /**
@@ -14,11 +14,11 @@ export async function GET(
     const { slug } = await params;
 
     // Get card ID from slug
-    const db = getDb();
-    const card = db.prepare('SELECT id, head_version_id FROM cards WHERE slug = ?').get(slug) as {
+    const db = getAsyncDb();
+    const card = await db.prepare('SELECT id, head_version_id FROM cards WHERE slug = ?').get<{
       id: string;
       head_version_id: string | null;
-    } | undefined;
+    }>(slug);
 
     if (!card) {
       return NextResponse.json(
@@ -28,7 +28,7 @@ export async function GET(
     }
 
     // Get all versions
-    const versions = getCardVersions(card.id);
+    const versions = await getCardVersions(card.id);
 
     // Format response
     const formattedVersions = versions.map((v) => ({

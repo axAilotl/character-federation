@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { updateCardVisibility } from '@/lib/db/cards';
+import { parseBody, UpdateVisibilitySchema } from '@/lib/validations';
 
 /**
  * PUT /api/admin/cards/[cardId]/visibility
@@ -22,18 +23,12 @@ export async function PUT(
       );
     }
 
-    const body = await request.json();
-    const { visibility } = body;
+    // Parse and validate request body
+    const parsed = await parseBody(request, UpdateVisibilitySchema);
+    if ('error' in parsed) return parsed.error;
+    const { visibility } = parsed.data;
 
-    const validVisibilities = ['public', 'nsfw_only', 'unlisted', 'blocked'];
-    if (!validVisibilities.includes(visibility)) {
-      return NextResponse.json(
-        { error: `Invalid visibility. Must be one of: ${validVisibilities.join(', ')}` },
-        { status: 400 }
-      );
-    }
-
-    updateCardVisibility(cardId, visibility);
+    await updateCardVisibility(cardId, visibility);
 
     return NextResponse.json({ success: true });
   } catch (error) {

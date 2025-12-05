@@ -196,6 +196,7 @@ export function isCloudflareRuntime(): boolean {
 /**
  * Get database for local development (better-sqlite3)
  * Returns sync API
+ * @deprecated Use getAsyncDb() instead
  */
 export function getDb(): UnifiedDb {
   if (localDb) return localDb;
@@ -248,6 +249,7 @@ export function closeDb(): void {
 
 /**
  * Run a transaction (local only - D1 uses batches)
+ * @deprecated Use getAsyncDb().transaction() instead
  */
 export function transaction<T>(fn: (db: UnifiedDb) => T): T {
   const db = getDb();

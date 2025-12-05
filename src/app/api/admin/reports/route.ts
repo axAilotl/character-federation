@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '@/lib/db';
+import { getAsyncDb } from '@/lib/db/async-db';
 import { getSession } from '@/lib/auth';
+import { parseQuery, AdminReportsFilterSchema } from '@/lib/validations';
 
 /**
  * GET /api/admin/reports
@@ -17,12 +18,12 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const searchParams = request.nextUrl.searchParams;
-    const page = parseInt(searchParams.get('page') || '1');
-    const limit = parseInt(searchParams.get('limit') || '20');
-    const status = searchParams.get('status');
+    // Parse and validate query parameters
+    const parsed = parseQuery(request.nextUrl.searchParams, AdminReportsFilterSchema);
+    if ('error' in parsed) return parsed.error;
+    const { page, limit, status } = parsed.data;
 
-    const db = getDb();
+    const db = getAsyncDb();
     const offset = (page - 1) * limit;
     const params: (string | number)[] = [];
     const conditions: string[] = [];
@@ -37,8 +38,8 @@ export async function GET(request: NextRequest) {
 
     // Count total
     const countQuery = `SELECT COUNT(*) as total FROM reports r ${whereClause}`;
-    const totalResult = db.prepare(countQuery).get(...params) as { total: number };
-    const total = totalResult.total;
+    const totalResult = await db.prepare(countQuery).get<{ total: number }>(...params);
+    const total = totalResult?.total || 0;
 
     // Get reports with card and reporter info
     const query = `
@@ -64,7 +65,7 @@ export async function GET(request: NextRequest) {
     `;
 
     params.push(limit, offset);
-    const rows = db.prepare(query).all(...params) as {
+    const rows = await db.prepare(query).all<{
       id: number;
       card_id: string;
       reporter_id: string;
@@ -76,7 +77,7 @@ export async function GET(request: NextRequest) {
       card_name: string;
       card_thumbnail: string | null;
       reporter_username: string;
-    }[];
+    }>(...params);
 
     const items = rows.map(row => ({
       id: row.id,

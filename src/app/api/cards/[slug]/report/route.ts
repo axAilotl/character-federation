@@ -1,15 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '@/lib/db';
+import { getAsyncDb } from '@/lib/db/async-db';
 import { reportCard } from '@/lib/db/cards';
 import { getSession } from '@/lib/auth';
-
-const VALID_REASONS = [
-  'spam',
-  'harassment',
-  'inappropriate_content',
-  'copyright',
-  'other',
-];
+import { parseBody, ReportSchema } from '@/lib/validations';
 
 /**
  * POST /api/cards/[slug]/report
@@ -31,30 +24,14 @@ export async function POST(
       );
     }
 
-    // Parse request body
-    const body = await request.json();
-    const reason = body.reason as string;
-    const details = body.details as string | undefined;
-
-    // Validate reason
-    if (!reason || !VALID_REASONS.includes(reason)) {
-      return NextResponse.json(
-        { error: `Invalid reason. Must be one of: ${VALID_REASONS.join(', ')}` },
-        { status: 400 }
-      );
-    }
-
-    // Validate details length
-    if (details && details.length > 1000) {
-      return NextResponse.json(
-        { error: 'Details too long (max 1000 characters)' },
-        { status: 400 }
-      );
-    }
+    // Parse and validate request body
+    const parsed = await parseBody(request, ReportSchema);
+    if ('error' in parsed) return parsed.error;
+    const { reason, details } = parsed.data;
 
     // Get card ID from slug
-    const db = getDb();
-    const card = db.prepare('SELECT id FROM cards WHERE slug = ?').get(slug) as { id: string } | undefined;
+    const db = getAsyncDb();
+    const card = await db.prepare('SELECT id FROM cards WHERE slug = ?').get<{ id: string }>(slug);
 
     if (!card) {
       return NextResponse.json(
@@ -64,7 +41,7 @@ export async function POST(
     }
 
     // Check if user already reported this card
-    const existingReport = db.prepare(`
+    const existingReport = await db.prepare(`
       SELECT id FROM reports
       WHERE card_id = ? AND reporter_id = ? AND status = 'pending'
     `).get(card.id, session.user.id);
@@ -77,7 +54,7 @@ export async function POST(
     }
 
     // Create report
-    reportCard(card.id, session.user.id, reason, details);
+    await reportCard(card.id, session.user.id, reason, details);
 
     return NextResponse.json({
       success: true,

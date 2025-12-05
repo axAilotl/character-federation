@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '@/lib/db';
+import { getAsyncDb } from '@/lib/db/async-db';
 import { getSession } from '@/lib/auth';
+import { parseBody, ToggleAdminSchema } from '@/lib/validations';
 
 /**
  * PUT /api/admin/users/[userId]/admin
@@ -30,18 +31,13 @@ export async function PUT(
       );
     }
 
-    const body = await request.json();
-    const { isAdmin } = body;
+    // Parse and validate request body
+    const parsed = await parseBody(request, ToggleAdminSchema);
+    if ('error' in parsed) return parsed.error;
+    const { isAdmin } = parsed.data;
 
-    if (typeof isAdmin !== 'boolean') {
-      return NextResponse.json(
-        { error: 'isAdmin must be a boolean' },
-        { status: 400 }
-      );
-    }
-
-    const db = getDb();
-    db.prepare('UPDATE users SET is_admin = ? WHERE id = ?').run(isAdmin ? 1 : 0, userId);
+    const db = getAsyncDb();
+    await db.prepare('UPDATE users SET is_admin = ? WHERE id = ?').run(isAdmin ? 1 : 0, userId);
 
     return NextResponse.json({ success: true });
   } catch (error) {

@@ -8,7 +8,7 @@ interface PageProps {
 
 export default async function CardDetailPage({ params }: PageProps) {
   const { slug } = await params;
-  const card = getCardBySlug(slug);
+  const card = await getCardBySlug(slug);
 
   if (!card) {
     notFound();
@@ -20,7 +20,7 @@ export default async function CardDetailPage({ params }: PageProps) {
 // Generate metadata for the page
 export async function generateMetadata({ params }: PageProps) {
   const { slug } = await params;
-  const card = getCardBySlug(slug);
+  const card = await getCardBySlug(slug);
 
   if (!card) {
     return { title: 'Card Not Found' };

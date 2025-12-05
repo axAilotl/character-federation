@@ -1,18 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCards, createCard, computeContentHash } from '@/lib/db/cards';
 import { parseFromBufferWithAssets } from '@/lib/card-parser';
-import { generateThumbnail, saveAssets } from '@/lib/image';
+import { generateThumbnailBuffer } from '@/lib/image/thumbnail';
+import { saveAssets } from '@/lib/image';
 import { generateId, generateSlug } from '@/lib/utils';
-import { store } from '@/lib/storage';
+import { store, getPublicUrl } from '@/lib/storage';
 import { getSession } from '@/lib/auth';
 import { isCloudflareRuntime } from '@/lib/db';
+import {
+  parseQuery,
+  CardFiltersSchema,
+  CardFileSchema,
+  CardUploadMetadataSchema,
+  UploadVisibilitySchema,
+  SUPPORTED_EXTENSIONS,
+  MAX_FILE_SIZE,
+} from '@/lib/validations';
 import type { CardFilters } from '@/types/card';
-
-// Supported file extensions
-const SUPPORTED_EXTENSIONS = ['.png', '.json', '.charx', '.voxpkg'];
-
-// Max file size (50MB for Cloudflare deployment)
-const MAX_FILE_SIZE = 50 * 1024 * 1024;
 
 /**
  * Client-provided metadata structure
@@ -53,25 +57,32 @@ interface ClientMetadata {
  */
 export async function GET(request: NextRequest) {
   try {
-    const searchParams = request.nextUrl.searchParams;
+    // Parse and validate query parameters
+    const parsed = parseQuery(request.nextUrl.searchParams, CardFiltersSchema);
+    if ('error' in parsed) return parsed.error;
 
     const filters: CardFilters = {
-      search: searchParams.get('search') || undefined,
-      tags: searchParams.get('tags')?.split(',').filter(Boolean) || undefined,
-      excludeTags: searchParams.get('excludeTags')?.split(',').filter(Boolean) || undefined,
-      sort: (searchParams.get('sort') as CardFilters['sort']) || 'newest',
-      page: parseInt(searchParams.get('page') || '1', 10),
-      limit: Math.min(parseInt(searchParams.get('limit') || '24', 10), 100),
-      minTokens: searchParams.get('minTokens') ? parseInt(searchParams.get('minTokens')!, 10) : undefined,
-      maxTokens: searchParams.get('maxTokens') ? parseInt(searchParams.get('maxTokens')!, 10) : undefined,
-      hasAltGreetings: searchParams.get('hasAltGreetings') === 'true',
-      hasLorebook: searchParams.get('hasLorebook') === 'true',
-      hasEmbeddedImages: searchParams.get('hasEmbeddedImages') === 'true',
+      search: parsed.data.search,
+      tags: parsed.data.tags,
+      excludeTags: parsed.data.excludeTags,
+      sort: parsed.data.sort,
+      page: parsed.data.page,
+      limit: parsed.data.limit,
+      minTokens: parsed.data.minTokens,
+      maxTokens: parsed.data.maxTokens,
+      hasAltGreetings: parsed.data.hasAltGreetings || false,
+      hasLorebook: parsed.data.hasLorebook || false,
+      hasEmbeddedImages: parsed.data.hasEmbeddedImages || false,
+      includeNsfw: parsed.data.includeNsfw || false,
     };
 
-    const result = getCards(filters);
+    const result = await getCards(filters);
 
-    return NextResponse.json(result);
+    return NextResponse.json(result, {
+      headers: {
+        'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=30',
+      },
+    });
   } catch (error) {
     console.error('Error fetching cards:', error);
     return NextResponse.json(
@@ -102,7 +113,7 @@ export async function POST(request: NextRequest) {
     const file = formData.get('file') as File | null;
     const tagsJson = formData.get('tags') as string | null;
     const metadataJson = formData.get('metadata') as string | null;
-    const visibility = (formData.get('visibility') as string) || 'public';
+    const visibilityRaw = formData.get('visibility') as string | null;
 
     if (!file) {
       return NextResponse.json(
@@ -111,31 +122,28 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check file size (server-side validation)
-    if (file.size > MAX_FILE_SIZE) {
+    // Validate file with Zod schema
+    const fileValidation = CardFileSchema.safeParse({ name: file.name, size: file.size });
+    if (!fileValidation.success) {
+      const firstError = fileValidation.error.errors[0];
       return NextResponse.json(
-        { error: `File size must be less than 50MB` },
+        { error: firstError.message },
         { status: 400 }
       );
     }
 
-    // Check file extension
+    // Validate visibility with Zod schema
+    const visibilityValidation = UploadVisibilitySchema.safeParse(visibilityRaw || 'public');
+    if (!visibilityValidation.success) {
+      return NextResponse.json(
+        { error: `Invalid visibility. Must be one of: public, nsfw_only, unlisted` },
+        { status: 400 }
+      );
+    }
+    const visibility = visibilityValidation.data;
+
+    // Extract file extension for storage (already validated by CardFileSchema)
     const ext = '.' + file.name.split('.').pop()?.toLowerCase();
-    if (!SUPPORTED_EXTENSIONS.includes(ext)) {
-      return NextResponse.json(
-        { error: `Invalid file type. Supported formats: ${SUPPORTED_EXTENSIONS.join(', ')}` },
-        { status: 400 }
-      );
-    }
-
-    // Validate visibility
-    const validVisibility = ['public', 'nsfw_only', 'unlisted'];
-    if (!validVisibility.includes(visibility)) {
-      return NextResponse.json(
-        { error: `Invalid visibility. Must be one of: ${validVisibility.join(', ')}` },
-        { status: 400 }
-      );
-    }
 
     // Parse tags from request
     const tagSlugs: string[] = tagsJson ? JSON.parse(tagsJson) : [];
@@ -235,7 +243,11 @@ export async function POST(request: NextRequest) {
       // Store main image via storage abstraction
       const imageName = `${id}.png`;
       await store(mainImage, imageName);
-      imagePath = `/${imageName}`;
+      
+      // Get public URL for the stored image
+      imagePath = isCloudflareRuntime() 
+        ? getPublicUrl(`r2://${imageName}`)
+        : getPublicUrl(`file:///${imageName}`);
 
       // Get image dimensions from PNG header
       if (mainImage.length > 24) {
@@ -243,40 +255,37 @@ export async function POST(request: NextRequest) {
         imageHeight = mainImage.readUInt32BE(20);
       }
 
-      // Generate thumbnail (local only - Cloudflare uses on-demand resizing)
-      if (!isCloudflareRuntime()) {
+      // Generate thumbnail
+      if (isCloudflareRuntime()) {
+        // On Cloudflare, use CF Image Resizing URL format
+        // Assumption: The frontend or proxy handles the /cdn-cgi/image/ construction
+        // OR we return the configured URL here.
+        // Using format: /cdn-cgi/image/width=500,format=webp/URL
+        // Since we have the imagePath (which is a public URL), we can prefix it.
+        thumbnailPath = `/cdn-cgi/image/width=500,format=webp${imagePath}`;
+        // Dimensions are approximate or unknown until resized
+        thumbnailWidth = 500;
+        thumbnailHeight = imageWidth && imageHeight ? Math.round((imageHeight * 500) / imageWidth) : 500;
+      } else {
+        // Local: Generate thumbnail buffer
         try {
-          const { join } = await import('path');
-          const { mkdirSync, existsSync } = await import('fs');
-
-          const uploadsDir = join(process.cwd(), 'uploads');
-          const thumbnailsDir = join(uploadsDir, 'thumbnails');
-
-          if (!existsSync(uploadsDir)) {
-            mkdirSync(uploadsDir, { recursive: true });
-          }
-          if (!existsSync(thumbnailsDir)) {
-            mkdirSync(thumbnailsDir, { recursive: true });
-          }
-
-          const thumbnail = await generateThumbnail(
-            mainImage,
-            join(thumbnailsDir, id),
-            'main'
-          );
-          thumbnailPath = `/uploads/thumbnails/${id}.webp`;
-          thumbnailWidth = thumbnail.width;
-          thumbnailHeight = thumbnail.height;
+          const thumbResult = await generateThumbnailBuffer(mainImage, 'main');
+          const thumbName = `thumbnails/${id}.webp`;
+          await store(thumbResult.buffer, thumbName);
+          
+          thumbnailPath = getPublicUrl(`file:///${thumbName}`);
+          thumbnailWidth = thumbResult.width;
+          thumbnailHeight = thumbResult.height;
         } catch (error) {
           console.error('Failed to generate thumbnail:', error);
         }
       }
     }
 
-    // Save extracted assets (charx/voxta packages only) - local only
-    // On Cloudflare, assets are stored directly in R2
-    if (extractedAssets.length > 0 && !isCloudflareRuntime()) {
+    // Save extracted assets (charx/voxta packages only)
+    if (extractedAssets.length > 0) {
       try {
+        // saveAssets now uses store() internally and handles thumbnails logic
         const assetsResult = await saveAssets(id, extractedAssets);
 
         savedAssetsData = assetsResult.assets.map(a => ({
@@ -300,7 +309,8 @@ export async function POST(request: NextRequest) {
     const hasActualAssets = actualAssetsCount > 0;
 
     // Create card with initial version in database
-    const { cardId, versionId } = createCard({
+    // Note: createCard is still synchronous/sqlite, needs refactoring next
+    const { cardId, versionId } = await createCard({
       id,
       slug,
       name: parsedCard.name,

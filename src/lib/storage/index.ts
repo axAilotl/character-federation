@@ -9,6 +9,8 @@
  */
 
 import { FileStorageDriver } from './file';
+import { R2StorageDriver } from './r2';
+import { isCloudflare } from '@/lib/cloudflare/env';
 
 export interface StorageDriver {
   /**
@@ -40,9 +42,13 @@ export interface StorageDriver {
 // Storage driver registry
 const drivers: Map<string, StorageDriver> = new Map();
 
-// Register the file driver by default
+// Register the file driver
 const fileDriver = new FileStorageDriver();
 drivers.set('file', fileDriver);
+
+// Register the R2 driver
+const r2Driver = new R2StorageDriver();
+drivers.set('r2', r2Driver);
 
 /**
  * Get the appropriate driver for a storage URL
@@ -66,9 +72,13 @@ export function registerDriver(scheme: string, driver: StorageDriver): void {
 }
 
 /**
- * Store a blob using the default driver (file://)
+ * Store a blob using the appropriate driver (file:// or r2://)
+ * Defaults to R2 in Cloudflare, File otherwise
  */
 export async function store(data: Buffer, path: string): Promise<string> {
+  if (isCloudflare()) {
+    return r2Driver.store(data, path);
+  }
   return fileDriver.store(data, path);
 }
 

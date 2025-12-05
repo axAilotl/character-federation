@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 import { deleteCard } from '@/lib/db/cards';
+import { getAsyncDb } from '@/lib/db/async-db';
 
 /**
  * DELETE /api/admin/users/[userId]
@@ -31,35 +31,33 @@ export async function DELETE(
       );
     }
 
-    const db = getDb();
+    const db = getAsyncDb();
 
-    db.transaction(() => {
-      // Get all cards owned by this user
-      const userCards = db.prepare('SELECT id FROM cards WHERE uploader_id = ?').all(userId) as { id: string }[];
+    // Get all cards owned by this user
+    const userCards = await db.prepare('SELECT id FROM cards WHERE uploader_id = ?').all<{ id: string }>(userId);
 
-      // Delete each card (this handles all card-related cleanup)
-      for (const card of userCards) {
-        deleteCard(card.id);
-      }
+    // Delete each card (this handles all card-related cleanup)
+    for (const card of userCards) {
+      await deleteCard(card.id);
+    }
 
-      // Delete user's votes
-      db.prepare('DELETE FROM votes WHERE user_id = ?').run(userId);
+    // Delete user's votes
+    await db.prepare('DELETE FROM votes WHERE user_id = ?').run(userId);
 
-      // Delete user's favorites
-      db.prepare('DELETE FROM favorites WHERE user_id = ?').run(userId);
+    // Delete user's favorites
+    await db.prepare('DELETE FROM favorites WHERE user_id = ?').run(userId);
 
-      // Delete user's comments
-      db.prepare('DELETE FROM comments WHERE user_id = ?').run(userId);
+    // Delete user's comments
+    await db.prepare('DELETE FROM comments WHERE user_id = ?').run(userId);
 
-      // Delete user's reports
-      db.prepare('DELETE FROM reports WHERE reporter_id = ?').run(userId);
+    // Delete user's reports
+    await db.prepare('DELETE FROM reports WHERE reporter_id = ?').run(userId);
 
-      // Delete user's sessions
-      db.prepare('DELETE FROM sessions WHERE user_id = ?').run(userId);
+    // Delete user's sessions
+    await db.prepare('DELETE FROM sessions WHERE user_id = ?').run(userId);
 
-      // Delete the user
-      db.prepare('DELETE FROM users WHERE id = ?').run(userId);
-    })();
+    // Delete the user
+    await db.prepare('DELETE FROM users WHERE id = ?').run(userId);
 
     return NextResponse.json({ success: true });
   } catch (error) {

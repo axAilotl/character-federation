@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '@/lib/db';
+import { getAsyncDb } from '@/lib/db/async-db';
 import { toggleFavorite, isFavorited } from '@/lib/db/cards';
 import { getSession } from '@/lib/auth';
 
@@ -24,11 +24,11 @@ export async function POST(
     }
 
     // Get card ID from slug
-    const db = getDb();
-    const card = db.prepare('SELECT id, favorites_count FROM cards WHERE slug = ?').get(slug) as {
+    const db = getAsyncDb();
+    const card = await db.prepare('SELECT id, favorites_count FROM cards WHERE slug = ?').get<{
       id: string;
       favorites_count: number;
-    } | undefined;
+    }>(slug);
 
     if (!card) {
       return NextResponse.json(
@@ -38,18 +38,18 @@ export async function POST(
     }
 
     // Toggle favorite
-    const nowFavorited = toggleFavorite(session.user.id, card.id);
+    const nowFavorited = await toggleFavorite(session.user.id, card.id);
 
     // Get updated count
-    const updated = db.prepare('SELECT favorites_count FROM cards WHERE id = ?').get(card.id) as {
+    const updated = await db.prepare('SELECT favorites_count FROM cards WHERE id = ?').get<{
       favorites_count: number;
-    };
+    }>(card.id);
 
     return NextResponse.json({
       success: true,
       data: {
         isFavorited: nowFavorited,
-        favoritesCount: updated.favorites_count,
+        favoritesCount: updated?.favorites_count || 0,
       },
     });
   } catch (error) {
@@ -81,8 +81,8 @@ export async function GET(
     }
 
     // Get card ID from slug
-    const db = getDb();
-    const card = db.prepare('SELECT id FROM cards WHERE slug = ?').get(slug) as { id: string } | undefined;
+    const db = getAsyncDb();
+    const card = await db.prepare('SELECT id FROM cards WHERE slug = ?').get<{ id: string }>(slug);
 
     if (!card) {
       return NextResponse.json(
@@ -91,7 +91,7 @@ export async function GET(
       );
     }
 
-    const favorited = isFavorited(session.user.id, card.id);
+    const favorited = await isFavorited(session.user.id, card.id);
 
     return NextResponse.json({
       isFavorited: favorited,

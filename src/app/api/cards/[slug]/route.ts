@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCardBySlug, deleteCard } from '@/lib/db/cards';
-import { getSessionById, SESSION_COOKIE_NAME } from '@/lib/auth';
+import { getSession } from '@/lib/auth';
 
 interface RouteParams {
   params: Promise<{ slug: string }>;
@@ -13,7 +13,7 @@ interface RouteParams {
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
     const { slug } = await params;
-    const card = getCardBySlug(slug);
+    const card = await getCardBySlug(slug);
 
     if (!card) {
       return NextResponse.json(
@@ -22,7 +22,11 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    return NextResponse.json(card);
+    return NextResponse.json(card, {
+      headers: {
+        'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=60',
+      },
+    });
   } catch (error) {
     console.error('Error fetching card:', error);
     return NextResponse.json(
@@ -39,15 +43,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 export async function DELETE(request: NextRequest, { params }: RouteParams) {
   try {
     // Check authentication
-    const sessionId = request.cookies.get(SESSION_COOKIE_NAME)?.value;
-    if (!sessionId) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
-
-    const session = getSessionById(sessionId);
+    const session = await getSession();
     if (!session || !session.user.isAdmin) {
       return NextResponse.json(
         { error: 'Forbidden: Admin access required' },
@@ -56,7 +52,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     }
 
     const { slug } = await params;
-    const card = getCardBySlug(slug);
+    const card = await getCardBySlug(slug);
 
     if (!card) {
       return NextResponse.json(
@@ -66,7 +62,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     }
 
     // Delete the card
-    deleteCard(card.id);
+    await deleteCard(card.id);
 
     return NextResponse.json({ success: true });
   } catch (error) {

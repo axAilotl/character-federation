@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '@/lib/db';
+import { getAsyncDb } from '@/lib/db/async-db';
+import { parseQuery, SearchQuerySchema } from '@/lib/validations';
 
 interface SearchResult {
   id: string;
@@ -22,11 +23,10 @@ interface SearchResult {
  */
 export async function GET(request: NextRequest) {
   try {
-    const searchParams = request.nextUrl.searchParams;
-    const query = searchParams.get('q') || '';
-    const limit = Math.min(parseInt(searchParams.get('limit') || '20'), 100);
-    const offset = parseInt(searchParams.get('offset') || '0');
-    const includeNsfw = searchParams.get('nsfw') === 'true';
+    // Parse and validate query parameters
+    const parsed = parseQuery(request.nextUrl.searchParams, SearchQuerySchema);
+    if ('error' in parsed) return parsed.error;
+    const { q: query, limit, offset, nsfw: includeNsfw } = parsed.data;
 
     if (!query || query.trim().length < 2) {
       return NextResponse.json({
@@ -36,7 +36,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    const db = getDb();
+    const db = getAsyncDb();
 
     // Build FTS5 query with prefix matching
     const searchTerm = query.trim();
@@ -69,7 +69,7 @@ export async function GET(request: NextRequest) {
         AND ${visibilityCondition}
         AND c.moderation_state != 'blocked'
     `;
-    const totalResult = db.prepare(countQuery).get(ftsQuery) as { total: number };
+    const totalResult = await db.prepare(countQuery).get<{ total: number }>(ftsQuery);
 
     // Get ranked results with BM25 scoring and snippets
     // Note: bm25() column indices: 0=card_id (unindexed), 1=name, 2=description, 3=creator, 4=creator_notes
@@ -97,7 +97,7 @@ export async function GET(request: NextRequest) {
       LIMIT ? OFFSET ?
     `;
 
-    const rows = db.prepare(searchQuery).all(ftsQuery, limit, offset) as {
+    const rows = await db.prepare(searchQuery).all<{
       id: string;
       slug: string;
       name: string;
@@ -110,7 +110,7 @@ export async function GET(request: NextRequest) {
       downloads_count: number;
       rank: number;
       snippet: string | null;
-    }[];
+    }>(ftsQuery, limit, offset);
 
     const items: SearchResult[] = rows.map(row => ({
       id: row.id,
@@ -129,9 +129,9 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       items,
-      total: totalResult.total,
+      total: totalResult?.total || 0,
       query: query,
-      hasMore: offset + items.length < totalResult.total,
+      hasMore: offset + items.length < (totalResult?.total || 0),
     });
   } catch (error) {
     console.error('Search error:', error);

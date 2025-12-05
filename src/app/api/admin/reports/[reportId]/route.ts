@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '@/lib/db';
+import { getAsyncDb } from '@/lib/db/async-db';
 import { getSession } from '@/lib/auth';
+import { parseBody, UpdateReportStatusSchema } from '@/lib/validations';
 
 /**
  * PUT /api/admin/reports/[reportId]
@@ -22,19 +23,13 @@ export async function PUT(
       );
     }
 
-    const body = await request.json();
-    const { status } = body;
+    // Parse and validate request body
+    const parsed = await parseBody(request, UpdateReportStatusSchema);
+    if ('error' in parsed) return parsed.error;
+    const { status } = parsed.data;
 
-    const validStatuses = ['pending', 'reviewed', 'resolved', 'dismissed'];
-    if (!validStatuses.includes(status)) {
-      return NextResponse.json(
-        { error: `Invalid status. Must be one of: ${validStatuses.join(', ')}` },
-        { status: 400 }
-      );
-    }
-
-    const db = getDb();
-    db.prepare('UPDATE reports SET status = ? WHERE id = ?').run(status, reportId);
+    const db = getAsyncDb();
+    await db.prepare('UPDATE reports SET status = ? WHERE id = ?').run(status, reportId);
 
     return NextResponse.json({ success: true });
   } catch (error) {

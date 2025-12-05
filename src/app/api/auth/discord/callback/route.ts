@@ -108,7 +108,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Login or register with OAuth
-    const { user, sessionId } = loginWithOAuth('discord', discordUser.id, {
+    const { sessionId } = await loginWithOAuth('discord', discordUser.id, {
       email: discordUser.email,
       username: discordUser.username,
       displayName: discordUser.global_name || discordUser.username,

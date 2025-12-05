@@ -1,4 +1,5 @@
-import { getDb, UserRow } from '@/lib/db';
+import { getAsyncDb } from '@/lib/db/async-db';
+import { type UserRow } from '@/lib/db';
 import { nanoid } from 'nanoid';
 import { cookies } from 'next/headers';
 import bcrypt from 'bcryptjs';
@@ -34,15 +35,23 @@ export interface Session {
   expiresAt: number;
 }
 
-// Create admin user if it doesn't exist
+// Create admin user if it doesn't exist (opt-in)
 export async function ensureAdminUser(): Promise<void> {
-  const db = getDb();
-  const existing = db.prepare('SELECT id FROM users WHERE username = ?').get('admin');
+  const allowBootstrap = process.env.ALLOW_AUTO_ADMIN === 'true' || process.env.NODE_ENV === 'development';
+  const bootstrapPassword = process.env.ADMIN_BOOTSTRAP_PASSWORD;
+
+  // Disable silent default admin in production unless explicitly enabled with a password
+  if (!allowBootstrap || !bootstrapPassword || process.env.NODE_ENV === 'production') {
+    return;
+  }
+
+  const db = getAsyncDb();
+  const existing = await db.prepare('SELECT id FROM users WHERE username = ?').get('admin');
 
   if (!existing) {
     const id = nanoid();
-    const passwordHash = await hashPassword('password');
-    db.prepare(`
+    const passwordHash = await hashPassword(bootstrapPassword);
+    await db.prepare(`
       INSERT INTO users (id, username, display_name, password_hash, is_admin, provider)
       VALUES (?, ?, ?, ?, ?, ?)
     `).run(id, 'admin', 'Administrator', passwordHash, 1, 'local');
@@ -51,12 +60,12 @@ export async function ensureAdminUser(): Promise<void> {
 
 // Login with username and password
 export async function login(username: string, password: string): Promise<{ user: User; sessionId: string } | null> {
-  const db = getDb();
+  const db = getAsyncDb();
 
-  const user = db.prepare(`
+  const user = await db.prepare(`
     SELECT id, username, display_name, password_hash, is_admin
     FROM users WHERE username = ?
-  `).get(username) as UserRow | undefined;
+  `).get<UserRow>(username);
 
   if (!user || !user.password_hash) {
     return null;
@@ -71,7 +80,7 @@ export async function login(username: string, password: string): Promise<{ user:
   const sessionId = nanoid(32);
   const expiresAt = Math.floor(Date.now() / 1000) + (SESSION_EXPIRY_DAYS * 24 * 60 * 60);
 
-  db.prepare(`
+  await db.prepare(`
     INSERT INTO sessions (id, user_id, expires_at)
     VALUES (?, ?, ?)
   `).run(sessionId, user.id, expiresAt);
@@ -88,9 +97,9 @@ export async function login(username: string, password: string): Promise<{ user:
 }
 
 // Logout - delete session
-export function logout(sessionId: string): void {
-  const db = getDb();
-  db.prepare('DELETE FROM sessions WHERE id = ?').run(sessionId);
+export async function logout(sessionId: string): Promise<void> {
+  const db = getAsyncDb();
+  await db.prepare('DELETE FROM sessions WHERE id = ?').run(sessionId);
 }
 
 // Get session from cookie
@@ -106,10 +115,10 @@ export async function getSession(): Promise<{ user: User; session: Session } | n
 }
 
 // Get session by ID
-export function getSessionById(sessionId: string): { user: User; session: Session } | null {
-  const db = getDb();
+export async function getSessionById(sessionId: string): Promise<{ user: User; session: Session } | null> {
+  const db = getAsyncDb();
 
-  const result = db.prepare(`
+  const result = await db.prepare(`
     SELECT
       s.id as session_id,
       s.user_id,
@@ -120,14 +129,14 @@ export function getSessionById(sessionId: string): { user: User; session: Sessio
     FROM sessions s
     JOIN users u ON s.user_id = u.id
     WHERE s.id = ?
-  `).get(sessionId) as {
+  `).get<{
     session_id: string;
     user_id: string;
     expires_at: number;
     username: string;
     display_name: string | null;
     is_admin: number;
-  } | undefined;
+  }>(sessionId);
 
   if (!result) {
     return null;
@@ -137,7 +146,7 @@ export function getSessionById(sessionId: string): { user: User; session: Sessio
   const now = Math.floor(Date.now() / 1000);
   if (result.expires_at < now) {
     // Delete expired session
-    db.prepare('DELETE FROM sessions WHERE id = ?').run(sessionId);
+    await db.prepare('DELETE FROM sessions WHERE id = ?').run(sessionId);
     return null;
   }
 
@@ -158,10 +167,10 @@ export function getSessionById(sessionId: string): { user: User; session: Sessio
 
 // Register a new user
 export async function register(username: string, password: string): Promise<{ user: User; sessionId: string } | { error: string }> {
-  const db = getDb();
+  const db = getAsyncDb();
 
   // Check if username exists
-  const existing = db.prepare('SELECT id FROM users WHERE username = ?').get(username);
+  const existing = await db.prepare('SELECT id FROM users WHERE username = ?').get(username);
   if (existing) {
     return { error: 'Username already taken' };
   }
@@ -170,7 +179,7 @@ export async function register(username: string, password: string): Promise<{ us
   const id = nanoid();
   const passwordHash = await hashPassword(password);
 
-  db.prepare(`
+  await db.prepare(`
     INSERT INTO users (id, username, password_hash, is_admin, provider)
     VALUES (?, ?, ?, ?, ?)
   `).run(id, username, passwordHash, 0, 'local');
@@ -179,7 +188,7 @@ export async function register(username: string, password: string): Promise<{ us
   const sessionId = nanoid(32);
   const expiresAt = Math.floor(Date.now() / 1000) + (SESSION_EXPIRY_DAYS * 24 * 60 * 60);
 
-  db.prepare(`
+  await db.prepare(`
     INSERT INTO sessions (id, user_id, expires_at)
     VALUES (?, ?, ?)
   `).run(sessionId, id, expiresAt);
@@ -196,24 +205,24 @@ export async function register(username: string, password: string): Promise<{ us
 }
 
 // OAuth login/register - find or create user by provider
-export function loginWithOAuth(provider: string, providerId: string, profile: {
+export async function loginWithOAuth(provider: string, providerId: string, profile: {
   email?: string | null;
   username: string;
   displayName?: string | null;
   avatarUrl?: string | null;
-}): { user: User; sessionId: string } {
-  const db = getDb();
+}): Promise<{ user: User; sessionId: string }> {
+  const db = getAsyncDb();
 
   // Check if user exists with this provider
-  let user = db.prepare(`
+  let user = await db.prepare(`
     SELECT id, username, display_name, is_admin
     FROM users WHERE provider = ? AND provider_id = ?
-  `).get(provider, providerId) as UserRow | undefined;
+  `).get<UserRow>(provider, providerId);
 
   if (!user) {
     // Check if username is taken
     let username = profile.username;
-    const existingUsername = db.prepare('SELECT id FROM users WHERE username = ?').get(username);
+    const existingUsername = await db.prepare('SELECT id FROM users WHERE username = ?').get(username);
     if (existingUsername) {
       // Append random suffix to username
       username = `${username}_${nanoid(4)}`;
@@ -221,7 +230,7 @@ export function loginWithOAuth(provider: string, providerId: string, profile: {
 
     // Create new user
     const id = nanoid();
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO users (id, email, username, display_name, avatar_url, is_admin, provider, provider_id)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
@@ -242,7 +251,7 @@ export function loginWithOAuth(provider: string, providerId: string, profile: {
   const sessionId = nanoid(32);
   const expiresAt = Math.floor(Date.now() / 1000) + (SESSION_EXPIRY_DAYS * 24 * 60 * 60);
 
-  db.prepare(`
+  await db.prepare(`
     INSERT INTO sessions (id, user_id, expires_at)
     VALUES (?, ?, ?)
   `).run(sessionId, user.id, expiresAt);
@@ -260,10 +269,10 @@ export function loginWithOAuth(provider: string, providerId: string, profile: {
 
 // Update user password (for admin break-glass)
 export async function updatePassword(userId: string, newPassword: string): Promise<boolean> {
-  const db = getDb();
+  const db = getAsyncDb();
   const passwordHash = await hashPassword(newPassword);
 
-  const result = db.prepare(`
+  const result = await db.prepare(`
     UPDATE users SET password_hash = ?, updated_at = unixepoch()
     WHERE id = ?
   `).run(passwordHash, userId);
@@ -273,10 +282,10 @@ export async function updatePassword(userId: string, newPassword: string): Promi
 
 // Update password by username (for admin break-glass via CLI or route)
 export async function updatePasswordByUsername(username: string, newPassword: string): Promise<boolean> {
-  const db = getDb();
+  const db = getAsyncDb();
   const passwordHash = await hashPassword(newPassword);
 
-  const result = db.prepare(`
+  const result = await db.prepare(`
     UPDATE users SET password_hash = ?, updated_at = unixepoch()
     WHERE username = ?
   `).run(passwordHash, username);

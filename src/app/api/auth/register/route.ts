@@ -1,48 +1,28 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { register, SESSION_COOKIE_NAME, SESSION_EXPIRY_DAYS } from '@/lib/auth';
+import { applyRateLimit, getClientId } from '@/lib/rate-limit';
+import { parseBody, RegisterSchema } from '@/lib/validations';
+import { logAuthEvent, logRateLimit, logError } from '@/lib/logger';
 
 export async function POST(request: NextRequest) {
+  const clientId = getClientId(request);
+
   try {
-    const body = await request.json();
-    const { username, password } = body;
+    // Apply rate limiting
+    const rl = applyRateLimit(clientId, 'register');
+    logRateLimit(clientId, 'register', rl.allowed, rl.remaining);
 
-    // Validate username
-    if (!username || typeof username !== 'string') {
+    if (!rl.allowed) {
       return NextResponse.json(
-        { error: 'Username is required' },
-        { status: 400 }
+        { error: 'Too many signup attempts. Please try again later.' },
+        { status: 429, headers: { 'Retry-After': (rl.retryAfter || 600).toString() } }
       );
     }
 
-    if (username.length < 3 || username.length > 20) {
-      return NextResponse.json(
-        { error: 'Username must be 3-20 characters' },
-        { status: 400 }
-      );
-    }
+    const parsed = await parseBody(request, RegisterSchema);
+    if ('error' in parsed) return parsed.error;
 
-    if (!/^[a-zA-Z0-9_-]+$/.test(username)) {
-      return NextResponse.json(
-        { error: 'Username can only contain letters, numbers, underscores, and hyphens' },
-        { status: 400 }
-      );
-    }
-
-    // Validate password
-    if (!password || typeof password !== 'string') {
-      return NextResponse.json(
-        { error: 'Password is required' },
-        { status: 400 }
-      );
-    }
-
-    if (password.length < 6) {
-      return NextResponse.json(
-        { error: 'Password must be at least 6 characters' },
-        { status: 400 }
-      );
-    }
-
+    const { username, password } = parsed.data;
     const result = await register(username, password);
 
     if ('error' in result) {
@@ -51,6 +31,8 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+
+    logAuthEvent('register', result.user.id, { username, ip: clientId });
 
     const response = NextResponse.json({
       user: result.user,
@@ -67,7 +49,7 @@ export async function POST(request: NextRequest) {
 
     return response;
   } catch (error) {
-    console.error('Registration error:', error);
+    logError({ ip: clientId, path: '/api/auth/register' }, error instanceof Error ? error : new Error(String(error)));
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }

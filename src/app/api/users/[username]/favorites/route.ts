@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '@/lib/db';
+import { getAsyncDb } from '@/lib/db/async-db';
 import type { CardListItem } from '@/types/card';
 
 /**
@@ -16,11 +16,11 @@ export async function GET(
     const page = parseInt(searchParams.get('page') || '1');
     const limit = Math.min(parseInt(searchParams.get('limit') || '24'), 100);
 
-    const db = getDb();
+    const db = getAsyncDb();
     const offset = (page - 1) * limit;
 
     // Get user by username
-    const user = db.prepare('SELECT id FROM users WHERE username = ?').get(username) as { id: string } | undefined;
+    const user = await db.prepare('SELECT id FROM users WHERE username = ?').get<{ id: string }>(username);
 
     if (!user) {
       return NextResponse.json(
@@ -30,14 +30,14 @@ export async function GET(
     }
 
     // Count total
-    const totalResult = db.prepare(`
+    const totalResult = await db.prepare(`
       SELECT COUNT(*) as total
       FROM favorites f
       JOIN cards c ON f.card_id = c.id
       WHERE f.user_id = ?
         AND c.visibility IN ('public', 'nsfw_only')
         AND c.moderation_state != 'blocked'
-    `).get(user.id) as { total: number };
+    `).get<{ total: number }>(user.id);
 
     // Get favorited cards (ordered by when favorited)
     const query = `
@@ -65,7 +65,7 @@ export async function GET(
       LIMIT ? OFFSET ?
     `;
 
-    const rows = db.prepare(query).all(user.id, limit, offset) as {
+    const rows = await db.prepare(query).all<{
       id: string;
       slug: string;
       name: string;
@@ -98,7 +98,7 @@ export async function GET(
       uploader_username: string | null;
       uploader_display_name: string | null;
       favorited_at: number;
-    }[];
+    }>(user.id, limit, offset);
 
     // Get tags for cards
     const cardIds = rows.map(r => r.id);
@@ -106,18 +106,18 @@ export async function GET(
 
     if (cardIds.length > 0) {
       const placeholders = cardIds.map(() => '?').join(', ');
-      const tagRows = db.prepare(`
+      const tagRows = await db.prepare(`
         SELECT ct.card_id, t.id, t.name, t.slug, t.category
         FROM card_tags ct
         JOIN tags t ON ct.tag_id = t.id
         WHERE ct.card_id IN (${placeholders})
-      `).all(...cardIds) as {
+      `).all<{
         card_id: string;
         id: number;
         name: string;
         slug: string;
         category: string | null;
-      }[];
+      }>(...cardIds);
 
       for (const row of tagRows) {
         if (!tagsMap.has(row.card_id)) {
@@ -171,10 +171,10 @@ export async function GET(
 
     return NextResponse.json({
       items,
-      total: totalResult.total,
+      total: totalResult?.total || 0,
       page,
       limit,
-      hasMore: offset + items.length < totalResult.total,
+      hasMore: offset + items.length < (totalResult?.total || 0),
     });
   } catch (error) {
     console.error('Error fetching user favorites:', error);

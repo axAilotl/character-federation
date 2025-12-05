@@ -12,7 +12,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const { slug } = await params;
     const format = request.nextUrl.searchParams.get('format') || 'png';
 
-    const card = getCardBySlug(slug);
+    const card = await getCardBySlug(slug);
 
     if (!card) {
       return NextResponse.json(
@@ -21,8 +21,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    const version = card.versionId ? getCardVersionById(card.versionId) : null;
-    incrementDownloads(card.id);
+    const version = card.versionId ? await getCardVersionById(card.versionId) : null;
+    await incrementDownloads(card.id);
 
     if (format === 'json') {
       return new NextResponse(JSON.stringify(card.cardData, null, 2), {

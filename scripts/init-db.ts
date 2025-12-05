@@ -11,8 +11,8 @@
 import Database from 'better-sqlite3';
 import { readFileSync, existsSync, unlinkSync } from 'fs';
 import { join } from 'path';
-import { createHash } from 'crypto';
 import { nanoid } from 'nanoid';
+import bcrypt from 'bcryptjs';
 
 const DB_PATH = process.env.DATABASE_PATH || join(process.cwd(), 'cardshub.db');
 const SCHEMA_PATH = join(process.cwd(), 'src/lib/db/schema.sql');
@@ -67,6 +67,18 @@ if (hasCardsTable) {
     `ALTER TABLE cards ADD COLUMN visibility TEXT DEFAULT 'public'`,
     `ALTER TABLE cards ADD COLUMN moderation_state TEXT DEFAULT 'ok'`,
     `ALTER TABLE cards ADD COLUMN forks_count INTEGER DEFAULT 0`,
+    `CREATE TABLE IF NOT EXISTS uploads (
+      id TEXT PRIMARY KEY,
+      storage_url TEXT NOT NULL,
+      path TEXT UNIQUE NOT NULL,
+      uploader_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+      visibility TEXT NOT NULL DEFAULT 'public' CHECK (visibility IN ('public', 'unlisted', 'private')),
+      access_token_hash TEXT,
+      created_at INTEGER DEFAULT (unixepoch())
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_uploads_path ON uploads(path)`,
+    `CREATE INDEX IF NOT EXISTS idx_uploads_uploader ON uploads(uploader_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_uploads_visibility ON uploads(visibility)`,
   ];
 
   for (const sql of migrations) {
@@ -112,18 +124,25 @@ try {
   console.log('  FTS5 table:', error instanceof Error ? error.message : error);
 }
 
-// Create admin user if not exists
-console.log('Creating admin user...');
-const adminExists = db.prepare('SELECT id FROM users WHERE username = ?').get('admin');
-if (!adminExists) {
-  const passwordHash = createHash('sha256').update('password').digest('hex');
-  db.prepare(`
-    INSERT INTO users (id, username, password_hash, is_admin, provider)
-    VALUES (?, 'admin', ?, 1, 'email')
-  `).run(nanoid(), passwordHash);
-  console.log('  Created admin user (username: admin, password: password)');
+// Optionally create admin user if explicitly configured
+const allowBootstrap = process.env.ALLOW_AUTO_ADMIN === 'true' || process.env.NODE_ENV === 'development';
+const bootstrapPassword = process.env.ADMIN_BOOTSTRAP_PASSWORD;
+
+if (allowBootstrap && bootstrapPassword) {
+  console.log('Creating admin user...');
+  const adminExists = db.prepare('SELECT id FROM users WHERE username = ?').get('admin');
+  if (!adminExists) {
+    const passwordHash = bcrypt.hashSync(bootstrapPassword, 12);
+    db.prepare(`
+      INSERT INTO users (id, username, password_hash, is_admin, provider)
+      VALUES (?, 'admin', ?, 1, 'email')
+    `).run(nanoid(), passwordHash);
+    console.log('  Created admin user with provided ADMIN_BOOTSTRAP_PASSWORD');
+  } else {
+    console.log('  Admin user already exists');
+  }
 } else {
-  console.log('  Admin user already exists');
+  console.log('Skipping admin bootstrap (set ALLOW_AUTO_ADMIN=true and ADMIN_BOOTSTRAP_PASSWORD to enable)');
 }
 
 // Initialize FTS index

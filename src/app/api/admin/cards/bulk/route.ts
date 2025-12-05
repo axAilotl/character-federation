@@ -1,6 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '@/lib/db';
+import { getAsyncDb } from '@/lib/db/async-db';
 import { getSession } from '@/lib/auth';
+import { z } from 'zod';
+import { parseBody, VisibilitySchema, ModerationStateSchema, NanoIdSchema } from '@/lib/validations';
+
+// Bulk update schema
+const BulkUpdateSchema = z.object({
+  cardIds: z.array(NanoIdSchema).min(1, 'At least one card ID required').max(100, 'Cannot update more than 100 cards at once'),
+  visibility: VisibilitySchema.optional(),
+  moderationState: ModerationStateSchema.optional(),
+});
 
 /**
  * PUT /api/admin/cards/bulk
@@ -17,55 +26,27 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    const body = await request.json();
-    const { cardIds, visibility, moderationState } = body;
+    // Parse and validate request body
+    const parsed = await parseBody(request, BulkUpdateSchema);
+    if ('error' in parsed) return parsed.error;
+    const { cardIds, visibility, moderationState } = parsed.data;
 
-    if (!Array.isArray(cardIds) || cardIds.length === 0) {
-      return NextResponse.json(
-        { error: 'cardIds must be a non-empty array' },
-        { status: 400 }
-      );
-    }
+    const db = getAsyncDb();
 
-    if (cardIds.length > 100) {
-      return NextResponse.json(
-        { error: 'Cannot update more than 100 cards at once' },
-        { status: 400 }
-      );
-    }
-
-    const db = getDb();
-
-    // Validate visibility if provided
+    // Update visibility if provided
     if (visibility) {
-      const validVisibilities = ['public', 'nsfw_only', 'unlisted', 'blocked'];
-      if (!validVisibilities.includes(visibility)) {
-        return NextResponse.json(
-          { error: `Invalid visibility. Must be one of: ${validVisibilities.join(', ')}` },
-          { status: 400 }
-        );
-      }
-
       const placeholders = cardIds.map(() => '?').join(', ');
-      db.prepare(`
+      await db.prepare(`
         UPDATE cards
         SET visibility = ?, updated_at = unixepoch()
         WHERE id IN (${placeholders})
       `).run(visibility, ...cardIds);
     }
 
-    // Validate moderation state if provided
+    // Update moderation state if provided
     if (moderationState) {
-      const validStates = ['ok', 'review', 'blocked'];
-      if (!validStates.includes(moderationState)) {
-        return NextResponse.json(
-          { error: `Invalid moderation state. Must be one of: ${validStates.join(', ')}` },
-          { status: 400 }
-        );
-      }
-
       const placeholders = cardIds.map(() => '?').join(', ');
-      db.prepare(`
+      await db.prepare(`
         UPDATE cards
         SET moderation_state = ?, updated_at = unixepoch()
         WHERE id IN (${placeholders})

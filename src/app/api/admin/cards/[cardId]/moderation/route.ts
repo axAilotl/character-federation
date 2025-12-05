@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { updateModerationState } from '@/lib/db/cards';
+import { parseBody, UpdateModerationSchema } from '@/lib/validations';
 
 /**
  * PUT /api/admin/cards/[cardId]/moderation
@@ -22,18 +23,12 @@ export async function PUT(
       );
     }
 
-    const body = await request.json();
-    const { state } = body;
+    // Parse and validate request body
+    const parsed = await parseBody(request, UpdateModerationSchema);
+    if ('error' in parsed) return parsed.error;
+    const { state } = parsed.data;
 
-    const validStates = ['ok', 'review', 'blocked'];
-    if (!validStates.includes(state)) {
-      return NextResponse.json(
-        { error: `Invalid moderation state. Must be one of: ${validStates.join(', ')}` },
-        { status: 400 }
-      );
-    }
-
-    updateModerationState(cardId, state);
+    await updateModerationState(cardId, state);
 
     return NextResponse.json({ success: true });
   } catch (error) {

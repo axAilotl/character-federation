@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getDb } from '@/lib/db';
+import { getAsyncDb } from '@/lib/db/async-db';
 import { getSession } from '@/lib/auth';
 
 /**
@@ -17,32 +17,37 @@ export async function GET() {
       );
     }
 
-    const db = getDb();
+    const db = getAsyncDb();
 
     // Total cards
-    const totalCards = (db.prepare('SELECT COUNT(*) as count FROM cards').get() as { count: number }).count;
+    const totalCardsResult = await db.prepare('SELECT COUNT(*) as count FROM cards').get<{ count: number }>();
+    const totalCards = totalCardsResult?.count || 0;
 
     // Total users
-    const totalUsers = (db.prepare('SELECT COUNT(*) as count FROM users').get() as { count: number }).count;
+    const totalUsersResult = await db.prepare('SELECT COUNT(*) as count FROM users').get<{ count: number }>();
+    const totalUsers = totalUsersResult?.count || 0;
 
     // Total downloads
-    const totalDownloads = (db.prepare('SELECT SUM(downloads_count) as total FROM cards').get() as { total: number | null }).total || 0;
+    const totalDownloadsResult = await db.prepare('SELECT SUM(downloads_count) as total FROM cards').get<{ total: number | null }>();
+    const totalDownloads = totalDownloadsResult?.total || 0;
 
     // Pending reports
-    const pendingReports = (db.prepare("SELECT COUNT(*) as count FROM reports WHERE status = 'pending'").get() as { count: number }).count;
+    const pendingReportsResult = await db.prepare("SELECT COUNT(*) as count FROM reports WHERE status = 'pending'").get<{ count: number }>();
+    const pendingReports = pendingReportsResult?.count || 0;
 
     // Cards uploaded today
     const todayStart = Math.floor(Date.now() / 1000) - (new Date().getHours() * 3600 + new Date().getMinutes() * 60 + new Date().getSeconds());
-    const cardsToday = (db.prepare('SELECT COUNT(*) as count FROM cards WHERE created_at >= ?').get(todayStart) as { count: number }).count;
+    const cardsTodayResult = await db.prepare('SELECT COUNT(*) as count FROM cards WHERE created_at >= ?').get<{ count: number }>(todayStart);
+    const cardsToday = cardsTodayResult?.count || 0;
 
     // Cards by visibility
-    const visibilityStats = db.prepare(`
+    const visibilityStats = await db.prepare(`
       SELECT
         visibility,
         COUNT(*) as count
       FROM cards
       GROUP BY visibility
-    `).all() as { visibility: string; count: number }[];
+    `).all<{ visibility: string; count: number }>();
 
     const cardsByVisibility = {
       public: 0,
@@ -57,13 +62,13 @@ export async function GET() {
     }
 
     // Cards by moderation state
-    const moderationStats = db.prepare(`
+    const moderationStats = await db.prepare(`
       SELECT
         moderation_state,
         COUNT(*) as count
       FROM cards
       GROUP BY moderation_state
-    `).all() as { moderation_state: string; count: number }[];
+    `).all<{ moderation_state: string; count: number }>();
 
     const cardsByModeration = {
       ok: 0,

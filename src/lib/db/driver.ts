@@ -138,8 +138,10 @@ class D1DatabaseWrapper implements Database {
   }
 
   async transaction<T>(fn: () => Promise<T>): Promise<T> {
-    // D1 doesn't have explicit transactions, but batch operations are atomic
-    // For now, just execute the function
+    // WARNING: D1 does not support standard transactions.
+    // This function simply executes the callback.
+    // Operations within this callback are NOT atomic and NOT isolated.
+    // Use db.batch() for atomic writes if possible.
     return fn();
   }
 

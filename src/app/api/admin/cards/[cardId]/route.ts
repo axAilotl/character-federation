@@ -22,7 +22,7 @@ export async function DELETE(
       );
     }
 
-    deleteCard(cardId);
+    await deleteCard(cardId);
 
     return NextResponse.json({ success: true });
   } catch (error) {

@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '@/lib/db';
+import { getAsyncDb } from '@/lib/db/async-db';
 import { addComment, getComments } from '@/lib/db/cards';
 import { getSession } from '@/lib/auth';
+import { parseBody, CommentSchema } from '@/lib/validations';
 
 /**
  * GET /api/cards/[slug]/comments
@@ -15,8 +16,8 @@ export async function GET(
     const { slug } = await params;
 
     // Get card ID from slug
-    const db = getDb();
-    const card = db.prepare('SELECT id FROM cards WHERE slug = ?').get(slug) as { id: string } | undefined;
+    const db = getAsyncDb();
+    const card = await db.prepare('SELECT id FROM cards WHERE slug = ?').get<{ id: string }>(slug);
 
     if (!card) {
       return NextResponse.json(
@@ -25,7 +26,7 @@ export async function GET(
       );
     }
 
-    const comments = getComments(card.id);
+    const comments = await getComments(card.id);
 
     // Organize comments into threaded structure
     const threadedComments = buildCommentTree(comments);
@@ -63,29 +64,14 @@ export async function POST(
       );
     }
 
-    // Parse request body
-    const body = await request.json();
-    const content = body.content as string;
-    const parentId = body.parentId as string | undefined;
-
-    // Validate content
-    if (!content || content.trim().length === 0) {
-      return NextResponse.json(
-        { error: 'Comment content is required' },
-        { status: 400 }
-      );
-    }
-
-    if (content.length > 10000) {
-      return NextResponse.json(
-        { error: 'Comment is too long (max 10000 characters)' },
-        { status: 400 }
-      );
-    }
+    // Parse and validate request body
+    const parsed = await parseBody(request, CommentSchema);
+    if ('error' in parsed) return parsed.error;
+    const { content, parentId } = parsed.data;
 
     // Get card ID from slug
-    const db = getDb();
-    const card = db.prepare('SELECT id FROM cards WHERE slug = ?').get(slug) as { id: string } | undefined;
+    const db = getAsyncDb();
+    const card = await db.prepare('SELECT id FROM cards WHERE slug = ?').get<{ id: string }>(slug);
 
     if (!card) {
       return NextResponse.json(
@@ -96,7 +82,7 @@ export async function POST(
 
     // Validate parent comment if provided
     if (parentId) {
-      const parentComment = db.prepare('SELECT id FROM comments WHERE id = ? AND card_id = ?').get(parentId, card.id);
+      const parentComment = await db.prepare('SELECT id FROM comments WHERE id = ? AND card_id = ?').get(parentId, card.id);
       if (!parentComment) {
         return NextResponse.json(
           { error: 'Parent comment not found' },
@@ -105,24 +91,24 @@ export async function POST(
       }
     }
 
-    // Add comment
-    const commentId = addComment(card.id, session.user.id, content.trim(), parentId);
+    // Add comment (content already trimmed by schema transform)
+    const commentId = await addComment(card.id, session.user.id, content, parentId ?? undefined);
 
     // Get user info for response
-    const user = db.prepare('SELECT username, display_name FROM users WHERE id = ?').get(session.user.id) as {
+    const user = await db.prepare('SELECT username, display_name FROM users WHERE id = ?').get<{
       username: string;
       display_name: string | null;
-    };
+    }>(session.user.id);
 
     return NextResponse.json({
       success: true,
       data: {
         id: commentId,
         userId: session.user.id,
-        username: user.username,
-        displayName: user.display_name,
+        username: user?.username || 'Unknown',
+        displayName: user?.display_name || null,
         parentId: parentId || null,
-        content: content.trim(),
+        content,
         createdAt: Math.floor(Date.now() / 1000),
       },
     });

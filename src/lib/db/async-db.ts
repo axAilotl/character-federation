@@ -26,6 +26,7 @@ export interface AsyncDb {
   prepare(sql: string): AsyncStatement;
   exec(sql: string): Promise<void>;
   transaction<T>(fn: () => Promise<T>): Promise<T>;
+  batch(statements: { sql: string; params?: unknown[] }[]): Promise<RunResult[]>;
 }
 
 // Cache for local database instance
@@ -70,6 +71,20 @@ function wrapBetterSqlite(db: any): AsyncDb {
         return await fn();
       })();
     },
+    async batch(statements: { sql: string; params?: unknown[] }[]): Promise<RunResult[]> {
+      const results: RunResult[] = [];
+      db.transaction(() => {
+        for (const { sql, params } of statements) {
+          const stmt = db.prepare(sql);
+          const result = stmt.run(...(params || []));
+          results.push({
+            changes: result.changes,
+            lastInsertRowid: result.lastInsertRowid,
+          });
+        }
+      })();
+      return results;
+    },
   };
 }
 
@@ -105,8 +120,24 @@ function wrapD1(db: D1Database): AsyncDb {
       await db.exec(sql);
     },
     async transaction<T>(fn: () => Promise<T>): Promise<T> {
-      // D1 doesn't have explicit transactions yet, just run the function
+      // WARNING: D1 does not support standard interactive transactions.
+      // This function simply executes the callback.
+      // Operations within this callback are NOT atomic and NOT isolated.
+      // Use db.batch() for atomic writes if possible.
       return await fn();
+    },
+    async batch(statements: { sql: string; params?: unknown[] }[]): Promise<RunResult[]> {
+      const preparedStatements = statements.map(({ sql, params }) => {
+        const stmt = db.prepare(sql);
+        return params && params.length > 0 ? stmt.bind(...params) : stmt;
+      });
+      
+      const results = await db.batch(preparedStatements);
+      
+      return results.map(result => ({
+        changes: result.meta?.changes ?? 0,
+        lastInsertRowid: result.meta?.last_row_id ?? 0,
+      }));
     },
   };
 }

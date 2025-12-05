@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '@/lib/db';
+import { getAsyncDb } from '@/lib/db/async-db';
 import { getSession } from '@/lib/auth';
+import { parseQuery, AdminUsersFilterSchema } from '@/lib/validations';
 
 /**
  * GET /api/admin/users
@@ -17,12 +18,12 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const searchParams = request.nextUrl.searchParams;
-    const page = parseInt(searchParams.get('page') || '1');
-    const limit = parseInt(searchParams.get('limit') || '20');
-    const search = searchParams.get('search') || '';
+    // Parse and validate query parameters
+    const parsed = parseQuery(request.nextUrl.searchParams, AdminUsersFilterSchema);
+    if ('error' in parsed) return parsed.error;
+    const { page, limit, search } = parsed.data;
 
-    const db = getDb();
+    const db = getAsyncDb();
     const offset = (page - 1) * limit;
     const params: (string | number)[] = [];
     const conditions: string[] = [];
@@ -38,8 +39,8 @@ export async function GET(request: NextRequest) {
 
     // Count total
     const countQuery = `SELECT COUNT(*) as total FROM users u ${whereClause}`;
-    const totalResult = db.prepare(countQuery).get(...params) as { total: number };
-    const total = totalResult.total;
+    const totalResult = await db.prepare(countQuery).get<{ total: number }>(...params);
+    const total = totalResult?.total || 0;
 
     // Get users with card and comment counts
     const query = `
@@ -54,7 +55,7 @@ export async function GET(request: NextRequest) {
     `;
 
     params.push(limit, offset);
-    const rows = db.prepare(query).all(...params) as {
+    const rows = await db.prepare(query).all<{
       id: string;
       username: string;
       display_name: string | null;
@@ -63,7 +64,7 @@ export async function GET(request: NextRequest) {
       created_at: number;
       cards_count: number;
       comments_count: number;
-    }[];
+    }>(...params);
 
     const items = rows.map(row => ({
       id: row.id,

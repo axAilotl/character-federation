@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '@/lib/db';
+import { getAsyncDb } from '@/lib/db/async-db';
 import { getSession } from '@/lib/auth';
+import { parseQuery, AdminCardsFilterSchema } from '@/lib/validations';
 
 /**
  * GET /api/admin/cards
@@ -17,14 +18,12 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const searchParams = request.nextUrl.searchParams;
-    const page = parseInt(searchParams.get('page') || '1');
-    const limit = parseInt(searchParams.get('limit') || '20');
-    const search = searchParams.get('search') || '';
-    const visibility = searchParams.get('visibility');
-    const moderation = searchParams.get('moderation');
+    // Parse and validate query parameters
+    const parsed = parseQuery(request.nextUrl.searchParams, AdminCardsFilterSchema);
+    if ('error' in parsed) return parsed.error;
+    const { page, limit, search, visibility, moderation } = parsed.data;
 
-    const db = getDb();
+    const db = getAsyncDb();
     const offset = (page - 1) * limit;
     const params: (string | number)[] = [];
     const conditions: string[] = [];
@@ -52,8 +51,8 @@ export async function GET(request: NextRequest) {
 
     // Count total
     const countQuery = `SELECT COUNT(*) as total FROM cards c ${whereClause}`;
-    const totalResult = db.prepare(countQuery).get(...params) as { total: number };
-    const total = totalResult.total;
+    const totalResult = await db.prepare(countQuery).get<{ total: number }>(...params);
+    const total = totalResult?.total || 0;
 
     // Get cards with report counts
     const query = `
@@ -74,7 +73,7 @@ export async function GET(request: NextRequest) {
     `;
 
     params.push(limit, offset);
-    const rows = db.prepare(query).all(...params) as {
+    const rows = await db.prepare(query).all<{
       id: string;
       slug: string;
       name: string;
@@ -89,7 +88,7 @@ export async function GET(request: NextRequest) {
       thumbnail_path: string | null;
       uploader_username: string | null;
       reports_count: number;
-    }[];
+    }>(...params);
 
     const items = rows.map(row => ({
       id: row.id,

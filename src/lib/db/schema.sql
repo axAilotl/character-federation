@@ -198,6 +198,21 @@ CREATE INDEX IF NOT EXISTS idx_votes_card ON votes(card_id);
 CREATE INDEX IF NOT EXISTS idx_favorites_user ON favorites(user_id);
 CREATE INDEX IF NOT EXISTS idx_favorites_card ON favorites(card_id);
 CREATE INDEX IF NOT EXISTS idx_downloads_card ON downloads(card_id);
+
+-- Uploads metadata (for asset visibility)
+CREATE TABLE IF NOT EXISTS uploads (
+  id TEXT PRIMARY KEY,
+  storage_url TEXT NOT NULL,
+  path TEXT UNIQUE NOT NULL,
+  uploader_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+  visibility TEXT NOT NULL DEFAULT 'public' CHECK (visibility IN ('public', 'unlisted', 'private')),
+  access_token_hash TEXT,
+  created_at INTEGER DEFAULT (unixepoch())
+);
+
+CREATE INDEX IF NOT EXISTS idx_uploads_path ON uploads(path);
+CREATE INDEX IF NOT EXISTS idx_uploads_uploader ON uploads(uploader_id);
+CREATE INDEX IF NOT EXISTS idx_uploads_visibility ON uploads(visibility);
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_tags_category ON tags(category);
 CREATE INDEX IF NOT EXISTS idx_reports_status ON reports(status);

@@ -1,9 +1,7 @@
 import sharp from 'sharp';
-import { existsSync, mkdirSync, writeFileSync } from 'fs';
-import { join } from 'path';
 
 export interface ThumbnailResult {
-  path: string;
+  buffer: Buffer;
   width: number;
   height: number;
   originalWidth: number;
@@ -18,23 +16,14 @@ const CONFIG = {
 };
 
 /**
- * Generate a thumbnail from an image buffer
- * @param imageBuffer - The source image buffer
- * @param outputPath - Full filesystem path for output (without extension)
- * @param type - 'main' for card thumbnails, 'asset' for asset thumbnails
+ * Generate a thumbnail buffer from an image buffer
+ * Does NOT write to disk.
  */
-export async function generateThumbnail(
+export async function generateThumbnailBuffer(
   imageBuffer: Buffer,
-  outputPath: string,
   type: ThumbnailType = 'main'
 ): Promise<ThumbnailResult> {
   const config = CONFIG[type];
-
-  // Ensure directory exists
-  const dir = join(outputPath, '..');
-  if (!existsSync(dir)) {
-    mkdirSync(dir, { recursive: true });
-  }
 
   const image = sharp(imageBuffer);
   const metadata = await image.metadata();
@@ -48,20 +37,19 @@ export async function generateThumbnail(
   const width = targetWidth;
   const height = Math.round((originalHeight * targetWidth) / originalWidth);
 
-  const fullPath = `${outputPath}.webp`;
-
   const buffer = await image
     .resize(width, height)
     .webp({ quality: config.quality })
     .toBuffer();
 
-  writeFileSync(fullPath, buffer);
-
   return {
-    path: fullPath,
+    buffer,
     width,
     height,
     originalWidth,
     originalHeight,
   };
 }
+
+// Deprecated: Removed fs-based generateThumbnail
+// Use generateThumbnailBuffer and store() instead.

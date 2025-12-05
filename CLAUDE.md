@@ -9,20 +9,39 @@ CardsHub is a platform for sharing, discovering, and managing AI character cards
 ## Tech Stack
 
 - **Framework**: Next.js 15 (App Router)
-- **Database**: better-sqlite3 with WAL mode
+- **Database**: SQLite via AsyncDb abstraction layer
+  - Local: better-sqlite3 with WAL mode (wrapped in async interface)
+  - Production: Cloudflare D1 (native async)
+- **ORM**: Drizzle ORM schema definitions in `src/lib/db/schema.ts`
+- **Validation**: Zod schemas in `src/lib/validations/` for all API inputs
+- **Logging**: Winston with structured JSON logging (production) and colorized console (dev)
+- **Rate Limiting**: Sliding window algorithm with per-endpoint configs in `src/lib/rate-limit.ts`
+- **Testing**: Vitest with 100+ tests for validation, rate limiting, and utilities
 - **Tokenizer**: tiktoken (cl100k_base encoding for GPT-4 compatible counts)
 - **Styling**: Tailwind CSS v4 with CSS-in-JS theme configuration
-- **Storage**: Abstracted with URL schemes (`file://`, future: `s3://`, `ipfs://`)
-- **Runtime**: Node.js 22
-- **Auth**: Cookie-based sessions with SHA256 password hashing
+- **Storage**: Abstracted with URL schemes (`file://`, `r2://`, future: `s3://`, `ipfs://`)
+- **Runtime**: Node.js 22 (local), Cloudflare Workers (production)
+- **Auth**: Cookie-based sessions with bcryptjs password hashing (work factor 12)
 
 ## Commands
 
 ```bash
-npm run dev      # Start development server
-npm run build    # Production build
-npm run start    # Start production server
-npm run lint     # Run ESLint
+# Development
+npm run dev          # Start development server
+npm run build        # Production build (Node.js)
+npm run start        # Start production server
+npm run lint         # Run ESLint
+npm run test         # Run vitest (watch mode)
+npm run test:run     # Run vitest (single run)
+
+# Cloudflare Deployment
+npm run cf:build     # Build for Cloudflare Workers
+npm run cf:deploy    # Deploy to Cloudflare
+npm run cf:dev       # Local Cloudflare dev server
+
+# Database
+npm run db:reset     # Reset and seed database
+npm run admin:reset-pw <user> <pass>  # Reset user password
 ```
 
 ## Architecture
@@ -35,8 +54,8 @@ npm run lint     # Run ESLint
 │   (identity)     │────────→│ (immutable snapshot)│
 ├──────────────────┤         ├─────────────────────┤
 │ id, slug         │         │ id                  │
-│ author_id        │         │ card_id             │
-│ title, summary   │         │ parent_version_id   │ ← previous edit
+│ uploader_id      │         │ card_id             │
+│ name, description│         │ parent_version_id   │ ← previous edit
 │ visibility       │         │ forked_from_id      │ ← derivative source
 │ head_version_id ─┼────────→│ storage_url         │
 │ stats (denorm)   │         │ content_hash        │
@@ -48,19 +67,19 @@ npm run lint     # Run ESLint
 **Key Concepts:**
 1. **Card** = logical identity (stable URL, ownership, stats)
 2. **CardVersion** = immutable snapshot (content, tokens, metadata)
-3. **Storage** = abstracted blob store (file:// for MVP)
+3. **Storage** = abstracted blob store (file:// local, r2:// production)
 
 ### Directory Structure
 ```
 src/
 ├── app/                    # Next.js App Router pages and API routes
 │   ├── api/cards/          # Card CRUD, download, vote, favorite, comment endpoints
-│   ├── api/auth/           # Login, logout, register, session endpoints
+│   ├── api/auth/           # Login, logout, register, session, Discord OAuth
 │   ├── api/admin/          # Admin-only endpoints (stats, cards, reports, users)
 │   ├── api/users/          # User profiles and favorites
 │   ├── api/search/         # Full-text search endpoint
-│   ├── api/tags/           # Tags listing
-│   ├── api/uploads/        # Static file serving
+│   ├── api/tags/           # Tags listing (cached 60s)
+│   ├── api/uploads/        # Static file serving with visibility enforcement
 │   ├── admin/              # Admin panel pages (dashboard, cards, reports, users)
 │   ├── explore/            # Main grid view with filtering
 │   ├── card/[slug]/        # Card detail page
@@ -73,13 +92,48 @@ src/
 │   ├── layout/             # AppShell, Header, Sidebar
 │   └── cards/              # CardGrid, CardItem, CardFilters, CardModal
 ├── lib/
-│   ├── auth/               # Authentication (login, register, sessions, context)
-│   ├── db/                 # SQLite connection, schema, card operations, FTS5
-│   ├── storage/            # Storage abstraction (file:// driver)
-│   ├── card-parser/        # PNG parsing, CCv2/v3 spec, tokenizer
+│   ├── auth/               # Authentication (bcrypt, sessions, context)
+│   ├── db/                 # Database abstraction layer
+│   │   ├── schema.ts       # Drizzle ORM schema definitions
+│   │   ├── driver.ts       # Dual-mode database driver
+│   │   ├── async-db.ts     # Unified AsyncDb interface
+│   │   ├── cards.ts        # Card operations (all async)
+│   │   └── index.ts        # Database initialization
+│   ├── storage/            # Storage abstraction
+│   │   ├── index.ts        # Driver registry
+│   │   ├── file.ts         # Local filesystem driver
+│   │   └── r2.ts           # Cloudflare R2 driver
+│   ├── card-architect/     # Multi-format card parsing (PNG, JSON, CharX, Voxta)
+│   ├── card-parser/        # Token counting and metadata extraction
+│   ├── image/              # Thumbnail generation
+│   ├── validations/        # Zod schemas for API input validation
+│   │   └── __tests__/      # Validation test files
+│   ├── __tests__/          # Core lib test files (rate-limit, etc.)
+│   ├── logger.ts           # Winston logging infrastructure
+│   ├── rate-limit.ts       # Sliding window rate limiter with endpoint configs
 │   └── utils/              # cn(), generateSlug(), generateId()
 └── types/                  # TypeScript interfaces for cards, users, API
 ```
+
+### Database Abstraction Layer
+
+The project uses a unified async interface that works with both better-sqlite3 (local) and Cloudflare D1 (production):
+
+```typescript
+// src/lib/db/async-db.ts
+interface AsyncDb {
+  prepare(sql: string): AsyncStatement;
+  exec(sql: string): Promise<void>;
+  transaction<T>(fn: () => Promise<T>): Promise<T>;
+}
+
+// Usage in cards.ts - all functions are async
+export async function getCards(filters): Promise<PaginatedResponse<CardListItem>>
+export async function getCardBySlug(slug): Promise<CardDetail | null>
+export async function createCard(input): Promise<{ cardId, versionId }>
+```
+
+**Important:** D1 does NOT support true transactions. The `transaction()` wrapper simply executes the callback - operations are NOT atomic. Use `db.batch()` for atomic writes when needed.
 
 ### Color System - Bisexual Dark Mode (CSS Variables)
 ```css
@@ -102,7 +156,7 @@ blocked     → admin removed, only admins see
 ```
 
 ### Character Card Parsing
-The `lib/card-parser/` module handles:
+The `lib/card-architect/` module handles:
 - PNG tEXt chunk extraction (base64-encoded JSON in "chara" field)
 - CCv2 spec parsing (`chara_card_v2`)
 - CCv3 spec parsing (`chara_card_v3`) with assets support
@@ -115,23 +169,24 @@ The `lib/card-parser/` module handles:
 
 ### Storage Abstraction
 The `lib/storage/` module provides:
-- URL-based storage references (`file:///path`, future: `s3://bucket/key`, `ipfs://Qm...`)
+- URL-based storage references (`file:///path`, `r2://bucket/key`, future: `s3://`, `ipfs://`)
 - Pluggable driver architecture
 - Content hashing for deduplication
-- Currently only `file://` driver is implemented
+- Drivers: `FileStorageDriver` (local), `R2StorageDriver` (Cloudflare)
 
 ### Asset Storage
 - Extracted assets saved to `uploads/assets/{cardId}/`
 - Thumbnails auto-generated for image assets (300px WebP)
 - Asset metadata stored in `saved_assets` JSON column on card_versions
 - Supports images, audio, and custom asset types
-- Max upload size: 300MB (for large CharX/Voxta packages)
+- Max upload size: 50MB (Cloudflare limit)
 
 ### Tag System
 - Tags are extracted directly from the card's embedded tags field
 - Tags are created automatically if they don't exist in the database
 - Tag slugs are normalized (lowercase, hyphenated)
 - Original tag names are preserved for display
+- Tag endpoint cached for 60 seconds
 
 ### Database Schema
 SQLite database (`cardshub.db`) with tables:
@@ -139,10 +194,12 @@ SQLite database (`cardshub.db`) with tables:
 - `card_versions` - Immutable version snapshots with token counts, storage_url, content_hash
 - `tags` - Tag definitions with categories and usage counts
 - `card_tags` - Many-to-many relationship
-- `users` - User accounts with password hashes and admin flag
-- `sessions` - Cookie-based session storage
+- `users` - User accounts with bcrypt password hashes and admin flag
+- `sessions` - Cookie-based session storage (30-day expiry)
 - `votes`, `favorites`, `comments`, `downloads` - User interactions
 - `reports` - Moderation reports
+- `cards_fts` - FTS5 virtual table for full-text search
+- `uploads` - Upload metadata for visibility enforcement
 
 ### API Endpoints
 
@@ -150,9 +207,9 @@ SQLite database (`cardshub.db`) with tables:
 | Method | Endpoint | Auth | Description |
 |--------|----------|------|-------------|
 | GET | /api/cards | No | List cards (paginated, filtered by tags, sorted) |
-| POST | /api/cards | No* | Upload new card (PNG/JSON/CharX/Voxta) |
+| POST | /api/cards | Yes | Upload new card (PNG/JSON/CharX/Voxta) |
 | GET | /api/cards/[slug] | No | Get single card with head version |
-| DELETE | /api/cards/[slug] | Yes | Delete card (admin only) |
+| DELETE | /api/cards/[slug] | Admin | Delete card |
 | GET | /api/cards/[slug]/download | No | Download card as PNG or JSON |
 | GET | /api/cards/[slug]/versions | No | Get version history |
 | POST | /api/cards/[slug]/vote | Yes | Vote on card (1 or -1) |
@@ -167,7 +224,7 @@ SQLite database (`cardshub.db`) with tables:
 | Method | Endpoint | Auth | Description |
 |--------|----------|------|-------------|
 | GET | /api/search | No | Full-text search with BM25 ranking and snippets |
-| GET | /api/tags | No | List all tags grouped by category |
+| GET | /api/tags | No | List all tags grouped by category (cached 60s) |
 
 **Users**
 | Method | Endpoint | Auth | Description |
@@ -182,9 +239,11 @@ SQLite database (`cardshub.db`) with tables:
 | Method | Endpoint | Auth | Description |
 |--------|----------|------|-------------|
 | POST | /api/auth/register | No | Register new user account |
-| POST | /api/auth/login | No | Login with username/password |
+| POST | /api/auth/login | No | Login with username/password (rate limited) |
 | POST | /api/auth/logout | Yes | Logout and clear session |
 | GET | /api/auth/session | No | Get current session |
+| GET | /api/auth/discord | No | Start Discord OAuth flow |
+| GET | /api/auth/discord/callback | No | Discord OAuth callback |
 
 **Admin (requires admin role)**
 | Method | Endpoint | Description |
@@ -200,22 +259,87 @@ SQLite database (`cardshub.db`) with tables:
 | GET | /api/admin/users | Paginated users |
 | DELETE | /api/admin/users/[userId] | Delete user |
 | PUT | /api/admin/users/[userId]/admin | Toggle admin status |
+| POST | /api/admin/password | Reset user password (admin only) |
 
 ### Authentication
-- Test admin account: username `admin`, password `password`
 - User registration: POST `/api/auth/register` with username (3-20 chars, alphanumeric + underscore/hyphen) and password (min 6 chars)
 - Sessions stored in SQLite with 30-day expiry
-- Passwords hashed with SHA-256 (use bcrypt in production)
+- Passwords hashed with bcryptjs (work factor 12)
+- Legacy SHA-256 hashes supported for migration (auto-detected by hash length)
 - Admin users can delete any card and manage users
 - Auth context available via `useAuth()` hook
+- Bootstrap admin: Set `ALLOW_AUTO_ADMIN=true` and `ADMIN_BOOTSTRAP_PASSWORD=<pass>` env vars
+- Discord OAuth: Set `DISCORD_CLIENT_ID` and `DISCORD_CLIENT_SECRET` env vars
 
 ### Key Patterns
+- **Async Database**: All database operations use `await` - functions return `Promise<T>`
+- **Zod Validation**: All API inputs validated via `parseBody()`/`parseQuery()` helpers
 - Client components use `'use client'` directive with `useSearchParams` wrapped in Suspense
 - API routes use async params: `{ params }: { params: Promise<{ slug: string }> }`
-- Database operations are synchronous (better-sqlite3)
 - Images served via API route that reads from `uploads/` directory
 - Creator notes support both HTML and markdown images
 - Uploads create both Card and CardVersion records atomically
+- Runtime checks: `isCloudflareRuntime()` to disable fs operations on Workers
+- Cache headers: Cards list (60s), individual cards (300s), tags (60s)
+
+### Input Validation (Zod)
+All API routes use Zod schemas from `src/lib/validations/` for request validation:
+- `auth.ts` - Login, register, password schemas
+- `cards.ts` - Card filters, upload metadata, file validation
+- `interactions.ts` - Vote, comment, report schemas
+- `admin.ts` - Admin operations (visibility, moderation, bulk updates)
+- `common.ts` - Shared schemas (pagination, visibility, tags)
+
+Usage pattern in API routes:
+```typescript
+import { parseBody, parseQuery, VoteSchema, CardFiltersSchema } from '@/lib/validations';
+
+// POST body validation
+const parsed = await parseBody(request, VoteSchema);
+if ('error' in parsed) return parsed.error;
+const { vote } = parsed.data;
+
+// GET query validation
+const parsed = parseQuery(request.nextUrl.searchParams, CardFiltersSchema);
+if ('error' in parsed) return parsed.error;
+```
+
+### Rate Limiting
+Sliding window algorithm in `src/lib/rate-limit.ts`:
+- Per-endpoint configurations in `RATE_LIMITS` constant
+- Predefined limits: login (10/min), register (5/10min), api (100/min), upload (10/min)
+- `applyRateLimit(clientId, endpoint)` for consistent usage
+- `getClientId(request)` extracts IP from CF-Connecting-IP > X-Forwarded-For > X-Real-IP
+- Cleanup interval removes expired buckets every 5 minutes
+
+```typescript
+import { applyRateLimit, getClientId } from '@/lib/rate-limit';
+
+const clientId = getClientId(request);
+const rl = applyRateLimit(clientId, 'login');
+if (!rl.allowed) {
+  return NextResponse.json({ error: 'Rate limited' }, {
+    status: 429,
+    headers: { 'Retry-After': rl.retryAfter?.toString() || '60' }
+  });
+}
+```
+
+### Logging (Winston)
+Structured logging in `src/lib/logger.ts`:
+- Development: colorized console with timestamps
+- Production: JSON format with file rotation (logs/error.log, logs/combined.log)
+- Log levels: error, warn, info, http, verbose, debug, silly
+- Environment variables: `LOG_LEVEL` (default: info in prod, debug in dev)
+
+```typescript
+import { logAuthEvent, logError, logRateLimit } from '@/lib/logger';
+
+logAuthEvent('login', userId, { username, ip: clientId });
+logAuthEvent('login_failed', undefined, { username, ip: clientId });
+logError({ path: '/api/auth/login' }, error);
+logRateLimit(clientId, 'login', rl.allowed, rl.remaining);
+```
 
 ### Full-Text Search (FTS5)
 - Uses SQLite FTS5 virtual table `cards_fts` for fast search
@@ -225,7 +349,7 @@ SQLite database (`cardshub.db`) with tables:
 - Prefix matching for autocomplete (`"word"*`)
 - Snippet generation with `<mark>` highlighting
 - Auto-populated on startup, updated on card create/delete
-- Fallback to LIKE search for single characters
+- Fallback to LIKE search on Cloudflare D1 (FTS5 not supported)
 
 ### Admin Panel
 - `/admin` - Dashboard with stats (cards, users, downloads, pending reports)
@@ -233,9 +357,17 @@ SQLite database (`cardshub.db`) with tables:
 - `/admin/reports` - Reports queue with status management
 - `/admin/users` - User management with admin toggle
 
-## Remaining Work (P2-P3)
-- OAuth providers (Google, Discord, GitHub)
-- Card editing (creates new CardVersion, preserves history)
-- Card forking (creates new Card with forked_from_version_id)
-- S3/IPFS storage drivers
-- Bulk card upload
+### Cloudflare Deployment
+- Uses OpenNextJS adapter (`@opennextjs/cloudflare`)
+- D1 database binding for SQLite
+- R2 bucket binding for file storage
+- Config in `wrangler.toml`
+- Build: `npm run cf:build` then `npm run cf:deploy`
+- Thumbnails use Cloudflare Image Resizing (`/cdn-cgi/image/...`) instead of Sharp
+
+## Known Limitations
+
+1. **D1 Transactions**: Not atomic - use `db.batch()` for critical multi-statement operations
+2. **FTS5 on D1**: Not supported - falls back to LIKE queries
+3. **Rate Limiting**: In-memory only, doesn't persist across Workers - use Cloudflare KV for production
+4. **Thumbnails on CF**: Uses Cloudflare Image Resizing URLs instead of Sharp

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '@/lib/db';
+import { getAsyncDb } from '@/lib/db/async-db';
 import { getSession } from '@/lib/auth';
 
 /**
@@ -16,11 +16,11 @@ export async function GET() {
       );
     }
 
-    const db = getDb();
-    const user = db.prepare(`
+    const db = getAsyncDb();
+    const user = await db.prepare(`
       SELECT id, username, display_name, email, avatar_url, is_admin, created_at
       FROM users WHERE id = ?
-    `).get(session.user.id) as {
+    `).get<{
       id: string;
       username: string;
       display_name: string | null;
@@ -28,7 +28,7 @@ export async function GET() {
       avatar_url: string | null;
       is_admin: number;
       created_at: number;
-    } | undefined;
+    }>(session.user.id);
 
     if (!user) {
       return NextResponse.json(
@@ -72,7 +72,7 @@ export async function PUT(request: NextRequest) {
     const body = await request.json();
     const { displayName, email } = body;
 
-    const db = getDb();
+    const db = getAsyncDb();
     const updates: string[] = [];
     const params: (string | null)[] = [];
 
@@ -99,7 +99,7 @@ export async function PUT(request: NextRequest) {
 
       // Check if email is already taken
       if (email) {
-        const existing = db.prepare(
+        const existing = await db.prepare(
           'SELECT id FROM users WHERE email = ? AND id != ?'
         ).get(email, session.user.id);
         if (existing) {
@@ -124,15 +124,15 @@ export async function PUT(request: NextRequest) {
     updates.push('updated_at = unixepoch()');
     params.push(session.user.id);
 
-    db.prepare(`
+    await db.prepare(`
       UPDATE users SET ${updates.join(', ')} WHERE id = ?
     `).run(...params);
 
     // Return updated user
-    const user = db.prepare(`
+    const user = await db.prepare(`
       SELECT id, username, display_name, email, avatar_url, is_admin, created_at
       FROM users WHERE id = ?
-    `).get(session.user.id) as {
+    `).get<{
       id: string;
       username: string;
       display_name: string | null;
@@ -140,16 +140,16 @@ export async function PUT(request: NextRequest) {
       avatar_url: string | null;
       is_admin: number;
       created_at: number;
-    };
+    }>(session.user.id);
 
     return NextResponse.json({
-      id: user.id,
-      username: user.username,
-      displayName: user.display_name,
-      email: user.email,
-      avatarUrl: user.avatar_url,
-      isAdmin: user.is_admin === 1,
-      createdAt: user.created_at,
+      id: user!.id,
+      username: user!.username,
+      displayName: user!.display_name,
+      email: user!.email,
+      avatarUrl: user!.avatar_url,
+      isAdmin: user!.is_admin === 1,
+      createdAt: user!.created_at,
     });
   } catch (error) {
     console.error('Error updating profile:', error);

@@ -1,29 +1,39 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { login, ensureAdminUser, SESSION_COOKIE_NAME, SESSION_EXPIRY_DAYS } from '@/lib/auth';
+import { login, SESSION_COOKIE_NAME, SESSION_EXPIRY_DAYS } from '@/lib/auth';
+import { applyRateLimit, getClientId } from '@/lib/rate-limit';
+import { parseBody, LoginSchema } from '@/lib/validations';
+import { logAuthEvent, logRateLimit, logError } from '@/lib/logger';
 
 export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json();
-    const { username, password } = body;
+  const clientId = getClientId(request);
 
-    if (!username || !password) {
+  try {
+    // Apply rate limiting
+    const rl = applyRateLimit(clientId, 'login');
+    logRateLimit(clientId, 'login', rl.allowed, rl.remaining);
+
+    if (!rl.allowed) {
       return NextResponse.json(
-        { error: 'Username and password are required' },
-        { status: 400 }
+        { error: 'Too many login attempts. Please wait before retrying.' },
+        { status: 429, headers: { 'Retry-After': (rl.retryAfter || 60).toString() } }
       );
     }
 
-    // Ensure admin user exists
-    await ensureAdminUser();
+    const parsed = await parseBody(request, LoginSchema);
+    if ('error' in parsed) return parsed.error;
 
+    const { username, password } = parsed.data;
     const result = await login(username, password);
 
     if (!result) {
+      logAuthEvent('login_failed', undefined, { username, ip: clientId });
       return NextResponse.json(
         { error: 'Invalid username or password' },
         { status: 401 }
       );
     }
+
+    logAuthEvent('login', result.user.id, { username, ip: clientId });
 
     const response = NextResponse.json({
       user: result.user,
@@ -40,7 +50,7 @@ export async function POST(request: NextRequest) {
 
     return response;
   } catch (error) {
-    console.error('Login error:', error);
+    logError({ ip: clientId, path: '/api/auth/login' }, error instanceof Error ? error : new Error(String(error)));
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '@/lib/db';
+import { getAsyncDb } from '@/lib/db/async-db';
 
 interface UserProfile {
   id: string;
@@ -27,58 +27,50 @@ export async function GET(
   try {
     const { username } = await params;
 
-    const db = getDb();
+    const db = getAsyncDb();
 
-    // Get user by username
-    const user = db.prepare(`
-      SELECT id, username, display_name, avatar_url, is_admin, created_at
-      FROM users
-      WHERE username = ?
-    `).get(username) as {
+    // Get user profile and stats in a single query
+    const result = await db.prepare(`
+      SELECT 
+        u.id, u.username, u.display_name, u.avatar_url, u.is_admin, u.created_at,
+        (SELECT COUNT(*) FROM cards WHERE uploader_id = u.id) as cards_count,
+        (SELECT COALESCE(SUM(downloads_count), 0) FROM cards WHERE uploader_id = u.id) as total_downloads,
+        (SELECT COALESCE(SUM(upvotes - downvotes), 0) FROM cards WHERE uploader_id = u.id) as total_upvotes,
+        (SELECT COUNT(*) FROM favorites WHERE user_id = u.id) as favorites_count
+      FROM users u
+      WHERE u.username = ?
+    `).get<{
       id: string;
       username: string;
       display_name: string | null;
       avatar_url: string | null;
       is_admin: number;
       created_at: number;
-    } | undefined;
+      cards_count: number;
+      total_downloads: number;
+      total_upvotes: number;
+      favorites_count: number;
+    }>(username);
 
-    if (!user) {
+    if (!result) {
       return NextResponse.json(
         { error: 'User not found' },
         { status: 404 }
       );
     }
 
-    // Get user stats
-    const cardsCount = (db.prepare(`
-      SELECT COUNT(*) as count FROM cards WHERE uploader_id = ?
-    `).get(user.id) as { count: number }).count;
-
-    const totalDownloads = (db.prepare(`
-      SELECT COALESCE(SUM(downloads_count), 0) as total FROM cards WHERE uploader_id = ?
-    `).get(user.id) as { total: number }).total;
-
-    const totalUpvotes = (db.prepare(`
-      SELECT COALESCE(SUM(upvotes - downvotes), 0) as total FROM cards WHERE uploader_id = ?
-    `).get(user.id) as { total: number }).total;
-
-    const favoritesCount = (db.prepare(`
-      SELECT COUNT(*) as count FROM favorites WHERE user_id = ?
-    `).get(user.id) as { count: number }).count;
-
     const profile: UserProfile = {
-      id: user.id,
-      username: user.username,
-      displayName: user.display_name,
-      avatarUrl: user.avatar_url,
-      isAdmin: user.is_admin === 1,
-      createdAt: user.created_at,
+      id: result.id,
+      username: result.username,
+      displayName: result.display_name,
+      avatarUrl: result.avatar_url,
+      isAdmin: result.is_admin === 1,
+      createdAt: result.created_at,
       stats: {
-        cardsCount,
-        totalDownloads,
-        totalUpvotes,
-        favoritesCount,
+        cardsCount: result.cards_count,
+        totalDownloads: result.total_downloads,
+        totalUpvotes: result.total_upvotes,
+        favoritesCount: result.favorites_count,
       },
     };
 
