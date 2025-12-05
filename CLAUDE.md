@@ -14,7 +14,7 @@ CardsHub is a platform for sharing, discovering, and managing AI character cards
   - Production: Cloudflare D1 (native async)
 - **ORM**: Drizzle ORM schema definitions in `src/lib/db/schema.ts`
 - **Validation**: Zod schemas in `src/lib/validations/` for all API inputs
-- **Logging**: Winston with structured JSON logging (production) and colorized console (dev)
+- **Logging**: Winston (Node.js) / Console (Cloudflare Workers) with structured output
 - **Rate Limiting**: Sliding window algorithm with per-endpoint configs in `src/lib/rate-limit.ts`
 - **Testing**: Vitest with 100+ tests for validation, rate limiting, and utilities
 - **Tokenizer**: tiktoken (cl100k_base encoding for GPT-4 compatible counts)
@@ -126,6 +126,12 @@ interface AsyncDb {
   exec(sql: string): Promise<void>;
   transaction<T>(fn: () => Promise<T>): Promise<T>;
 }
+
+// Unified getter - automatically uses D1 on Cloudflare, better-sqlite3 locally
+import { getDatabase } from '@/lib/db/async-db';
+
+const db = await getDatabase();
+const cards = await db.prepare('SELECT * FROM cards').all();
 
 // Usage in cards.ts - all functions are async
 export async function getCards(filters): Promise<PaginatedResponse<CardListItem>>
@@ -325,11 +331,11 @@ if (!rl.allowed) {
 }
 ```
 
-### Logging (Winston)
+### Logging
 Structured logging in `src/lib/logger.ts`:
-- Development: colorized console with timestamps
-- Production: JSON format with file rotation (logs/error.log, logs/combined.log)
-- Log levels: error, warn, info, http, verbose, debug, silly
+- **Node.js**: Winston with colorized console (dev) or JSON format with file rotation (prod)
+- **Cloudflare Workers**: Simple console logger (Winston not compatible with Workers runtime)
+- Log levels: error, warn, info, debug
 - Environment variables: `LOG_LEVEL` (default: info in prod, debug in dev)
 
 ```typescript
@@ -371,3 +377,4 @@ logRateLimit(clientId, 'login', rl.allowed, rl.remaining);
 2. **FTS5 on D1**: Not supported - falls back to LIKE queries
 3. **Rate Limiting**: In-memory only, doesn't persist across Workers - use Cloudflare KV for production
 4. **Thumbnails on CF**: Uses Cloudflare Image Resizing URLs instead of Sharp
+5. **Logging on CF**: Winston not available - uses simple console logger on Workers
