@@ -25,7 +25,7 @@ bucket_name = "cardshub-uploads"
 # DISCORD_CLIENT_SECRET
 
 [vars]
-NEXT_PUBLIC_APP_URL = "https://cardshub.pages.dev"
+NEXT_PUBLIC_APP_URL = "https://hub.axailotl.ai"
 
 # Development overrides
 [env.development.vars]
