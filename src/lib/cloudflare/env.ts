@@ -65,35 +65,26 @@ export async function getR2(): Promise<R2Bucket | null> {
  * Works on both Node.js (process.env) and Cloudflare (context.env)
  */
 export async function getDiscordCredentials(): Promise<{ clientId: string; clientSecret: string } | null> {
-  // On OpenNext/Cloudflare, vars from wrangler.toml should be in process.env
-  // Secrets set via `wrangler secret` should also be available
-
   // Check process.env first (works in both Node.js and OpenNext/Cloudflare)
   const clientId = process.env.DISCORD_CLIENT_ID;
   const clientSecret = process.env.DISCORD_CLIENT_SECRET;
-
-  console.log('[Discord Auth] process.env.DISCORD_CLIENT_ID:', clientId ? `set (${clientId.substring(0, 5)}...)` : 'not set');
-  console.log('[Discord Auth] process.env.DISCORD_CLIENT_SECRET:', clientSecret ? 'set' : 'not set');
 
   if (clientId && clientSecret) {
     return { clientId, clientSecret };
   }
 
-  // Try Cloudflare context as fallback
+  // Try Cloudflare context as fallback (secrets are only available here)
   const ctx = await getCloudflareContext();
-  console.log('[Discord Auth] Cloudflare context:', ctx ? 'available' : 'null');
-  if (ctx?.env) {
-    console.log('[Discord Auth] ctx.env keys:', Object.keys(ctx.env));
-  }
+  const cfClientId = ctx?.env.DISCORD_CLIENT_ID;
+  const cfClientSecret = ctx?.env.DISCORD_CLIENT_SECRET;
 
-  if (ctx?.env.DISCORD_CLIENT_ID && ctx?.env.DISCORD_CLIENT_SECRET) {
+  if (cfClientId && cfClientSecret) {
     return {
-      clientId: ctx.env.DISCORD_CLIENT_ID,
-      clientSecret: ctx.env.DISCORD_CLIENT_SECRET,
+      clientId: String(cfClientId),
+      clientSecret: String(cfClientSecret),
     };
   }
 
-  console.log('[Discord Auth] No credentials found');
   return null;
 }
 
