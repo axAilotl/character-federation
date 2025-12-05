@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { loginWithOAuth, SESSION_COOKIE_NAME, SESSION_EXPIRY_DAYS } from '@/lib/auth';
+import { getDiscordCredentials, getAppUrl } from '@/lib/cloudflare/env';
 
 interface DiscordTokenResponse {
   access_token: string;
@@ -29,7 +30,7 @@ export async function GET(request: NextRequest) {
   const state = searchParams.get('state');
   const error = searchParams.get('error');
 
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+  const baseUrl = await getAppUrl();
 
   // Handle OAuth errors
   if (error) {
@@ -48,11 +49,10 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(new URL('/login?error=invalid_state', baseUrl));
   }
 
-  const clientId = process.env.DISCORD_CLIENT_ID;
-  const clientSecret = process.env.DISCORD_CLIENT_SECRET;
-  const redirectUri = process.env.DISCORD_REDIRECT_URI || `${baseUrl}/api/auth/discord/callback`;
+  const creds = await getDiscordCredentials();
+  const redirectUri = `${baseUrl}/api/auth/discord/callback`;
 
-  if (!clientId || !clientSecret) {
+  if (!creds) {
     console.error('Discord OAuth not configured');
     return NextResponse.redirect(new URL('/login?error=not_configured', baseUrl));
   }
@@ -65,8 +65,8 @@ export async function GET(request: NextRequest) {
         'Content-Type': 'application/x-www-form-urlencoded',
       },
       body: new URLSearchParams({
-        client_id: clientId,
-        client_secret: clientSecret,
+        client_id: creds.clientId,
+        client_secret: creds.clientSecret,
         grant_type: 'authorization_code',
         code,
         redirect_uri: redirectUri,

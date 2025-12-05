@@ -59,3 +59,36 @@ export async function getR2(): Promise<R2Bucket | null> {
   const ctx = await getCloudflareContext();
   return ctx?.env.R2 ?? null;
 }
+
+/**
+ * Get Discord credentials from environment
+ * Works on both Node.js (process.env) and Cloudflare (context.env)
+ */
+export async function getDiscordCredentials(): Promise<{ clientId: string; clientSecret: string } | null> {
+  // Try Cloudflare context first
+  const ctx = await getCloudflareContext();
+  if (ctx?.env.DISCORD_CLIENT_ID && ctx?.env.DISCORD_CLIENT_SECRET) {
+    return {
+      clientId: ctx.env.DISCORD_CLIENT_ID,
+      clientSecret: ctx.env.DISCORD_CLIENT_SECRET,
+    };
+  }
+
+  // Fall back to process.env (Node.js)
+  if (process.env.DISCORD_CLIENT_ID && process.env.DISCORD_CLIENT_SECRET) {
+    return {
+      clientId: process.env.DISCORD_CLIENT_ID,
+      clientSecret: process.env.DISCORD_CLIENT_SECRET,
+    };
+  }
+
+  return null;
+}
+
+/**
+ * Get app URL from environment
+ */
+export async function getAppUrl(): Promise<string> {
+  const ctx = await getCloudflareContext();
+  return ctx?.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+}

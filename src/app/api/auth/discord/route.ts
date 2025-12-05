@@ -1,15 +1,17 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { nanoid } from 'nanoid';
+import { getDiscordCredentials, getAppUrl } from '@/lib/cloudflare/env';
 
 /**
  * GET /api/auth/discord
  * Initiates Discord OAuth flow - redirects to Discord authorization page
  */
-export async function GET(request: NextRequest) {
-  const clientId = process.env.DISCORD_CLIENT_ID;
-  const redirectUri = process.env.DISCORD_REDIRECT_URI || `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/auth/discord/callback`;
+export async function GET() {
+  const creds = await getDiscordCredentials();
+  const appUrl = await getAppUrl();
+  const redirectUri = `${appUrl}/api/auth/discord/callback`;
 
-  if (!clientId) {
+  if (!creds) {
     return NextResponse.json(
       { error: 'Discord OAuth not configured' },
       { status: 500 }
@@ -20,7 +22,7 @@ export async function GET(request: NextRequest) {
   const state = nanoid(32);
 
   const params = new URLSearchParams({
-    client_id: clientId,
+    client_id: creds.clientId,
     redirect_uri: redirectUri,
     response_type: 'code',
     scope: 'identify email',
