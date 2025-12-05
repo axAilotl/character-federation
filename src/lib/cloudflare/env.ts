@@ -67,7 +67,13 @@ export async function getR2(): Promise<R2Bucket | null> {
 export async function getDiscordCredentials(): Promise<{ clientId: string; clientSecret: string } | null> {
   // Try Cloudflare context first
   const ctx = await getCloudflareContext();
+
+  console.log('[Discord Auth] Cloudflare context:', ctx ? 'available' : 'null');
+  console.log('[Discord Auth] ctx.env keys:', ctx?.env ? Object.keys(ctx.env) : 'none');
+  console.log('[Discord Auth] process.env.DISCORD_CLIENT_ID:', process.env.DISCORD_CLIENT_ID ? 'set' : 'not set');
+
   if (ctx?.env.DISCORD_CLIENT_ID && ctx?.env.DISCORD_CLIENT_SECRET) {
+    console.log('[Discord Auth] Using Cloudflare context credentials');
     return {
       clientId: ctx.env.DISCORD_CLIENT_ID,
       clientSecret: ctx.env.DISCORD_CLIENT_SECRET,
@@ -76,12 +82,14 @@ export async function getDiscordCredentials(): Promise<{ clientId: string; clien
 
   // Fall back to process.env (Node.js)
   if (process.env.DISCORD_CLIENT_ID && process.env.DISCORD_CLIENT_SECRET) {
+    console.log('[Discord Auth] Using process.env credentials');
     return {
       clientId: process.env.DISCORD_CLIENT_ID,
       clientSecret: process.env.DISCORD_CLIENT_SECRET,
     };
   }
 
+  console.log('[Discord Auth] No credentials found');
   return null;
 }
 
