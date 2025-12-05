@@ -42,7 +42,7 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    const success = updatePasswordByUsername(username, newPassword);
+    const success = await updatePasswordByUsername(username, newPassword);
 
     if (!success) {
       return NextResponse.json(

@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { mkdirSync, existsSync } from 'fs';
-import { join } from 'path';
 import { getCards, createCard, computeContentHash } from '@/lib/db/cards';
 import { parseFromBufferWithAssets } from '@/lib/card-parser';
 import { generateThumbnail, saveAssets } from '@/lib/image';
 import { generateId, generateSlug } from '@/lib/utils';
 import { store } from '@/lib/storage';
+import { getSession } from '@/lib/auth';
+import { isCloudflareRuntime } from '@/lib/db';
 import type { CardFilters } from '@/types/card';
 
 // Supported file extensions
@@ -84,10 +84,20 @@ export async function GET(request: NextRequest) {
 /**
  * POST /api/cards
  * Upload a new card (creates Card + CardVersion)
+ * Requires authentication
  * Supports client-side parsing - if metadata is provided, skips server-side parsing
  */
 export async function POST(request: NextRequest) {
   try {
+    // Require authentication
+    const session = await getSession();
+    if (!session) {
+      return NextResponse.json(
+        { error: 'Authentication required to upload cards' },
+        { status: 401 }
+      );
+    }
+
     const formData = await request.formData();
     const file = formData.get('file') as File | null;
     const tagsJson = formData.get('tags') as string | null;
@@ -222,44 +232,50 @@ export async function POST(request: NextRequest) {
 
     // Save main image to /uploads/{id}.png (same location for all formats)
     if (mainImage) {
-      const uploadsDir = join(process.cwd(), 'uploads');
-      const thumbnailsDir = join(uploadsDir, 'thumbnails');
-
-      if (!existsSync(uploadsDir)) {
-        mkdirSync(uploadsDir, { recursive: true });
-      }
-      if (!existsSync(thumbnailsDir)) {
-        mkdirSync(thumbnailsDir, { recursive: true });
-      }
-
       // Store main image via storage abstraction
       const imageName = `${id}.png`;
       await store(mainImage, imageName);
       imagePath = `/${imageName}`;
 
-      // Get image dimensions
+      // Get image dimensions from PNG header
       if (mainImage.length > 24) {
         imageWidth = mainImage.readUInt32BE(16);
         imageHeight = mainImage.readUInt32BE(20);
       }
 
-      // Generate thumbnail
-      try {
-        const thumbnail = await generateThumbnail(
-          mainImage,
-          join(thumbnailsDir, id),
-          'main'
-        );
-        thumbnailPath = `/uploads/thumbnails/${id}.webp`;
-        thumbnailWidth = thumbnail.width;
-        thumbnailHeight = thumbnail.height;
-      } catch (error) {
-        console.error('Failed to generate thumbnail:', error);
+      // Generate thumbnail (local only - Cloudflare uses on-demand resizing)
+      if (!isCloudflareRuntime()) {
+        try {
+          const { join } = await import('path');
+          const { mkdirSync, existsSync } = await import('fs');
+
+          const uploadsDir = join(process.cwd(), 'uploads');
+          const thumbnailsDir = join(uploadsDir, 'thumbnails');
+
+          if (!existsSync(uploadsDir)) {
+            mkdirSync(uploadsDir, { recursive: true });
+          }
+          if (!existsSync(thumbnailsDir)) {
+            mkdirSync(thumbnailsDir, { recursive: true });
+          }
+
+          const thumbnail = await generateThumbnail(
+            mainImage,
+            join(thumbnailsDir, id),
+            'main'
+          );
+          thumbnailPath = `/uploads/thumbnails/${id}.webp`;
+          thumbnailWidth = thumbnail.width;
+          thumbnailHeight = thumbnail.height;
+        } catch (error) {
+          console.error('Failed to generate thumbnail:', error);
+        }
       }
     }
 
-    // Save extracted assets (charx/voxta packages only) - NOT the main image
-    if (extractedAssets.length > 0) {
+    // Save extracted assets (charx/voxta packages only) - local only
+    // On Cloudflare, assets are stored directly in R2
+    if (extractedAssets.length > 0 && !isCloudflareRuntime()) {
       try {
         const assetsResult = await saveAssets(id, extractedAssets);
 
@@ -291,7 +307,7 @@ export async function POST(request: NextRequest) {
       description: parsedCard.description || null,
       creator: parsedCard.creator || null,
       creatorNotes: parsedCard.creatorNotes || null,
-      uploaderId: null, // TODO: Get from auth session
+      uploaderId: session.user.id,
       visibility: visibility as 'public' | 'nsfw_only' | 'unlisted',
       tagSlugs: allTags,
       version: {

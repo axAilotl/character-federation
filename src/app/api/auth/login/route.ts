@@ -14,9 +14,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Ensure admin user exists
-    ensureAdminUser();
+    await ensureAdminUser();
 
-    const result = login(username, password);
+    const result = await login(username, password);
 
     if (!result) {
       return NextResponse.json(

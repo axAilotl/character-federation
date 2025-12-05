@@ -1,18 +1,24 @@
 import { getDb, UserRow } from '@/lib/db';
 import { nanoid } from 'nanoid';
 import { cookies } from 'next/headers';
-import crypto from 'crypto';
+import bcrypt from 'bcryptjs';
 
 const SESSION_COOKIE_NAME = 'cardshub_session';
 const SESSION_EXPIRY_DAYS = 30;
+const BCRYPT_ROUNDS = 12;
 
-// Simple password hashing (in production, use bcrypt)
-function hashPassword(password: string): string {
-  return crypto.createHash('sha256').update(password).digest('hex');
+async function hashPassword(password: string): Promise<string> {
+  return bcrypt.hash(password, BCRYPT_ROUNDS);
 }
 
-function verifyPassword(password: string, hash: string): boolean {
-  return hashPassword(password) === hash;
+async function verifyPassword(password: string, hash: string): Promise<boolean> {
+  // Support legacy SHA-256 hashes during migration
+  if (hash.length === 64 && /^[a-f0-9]+$/.test(hash)) {
+    const crypto = await import('crypto');
+    const sha256Hash = crypto.createHash('sha256').update(password).digest('hex');
+    return sha256Hash === hash;
+  }
+  return bcrypt.compare(password, hash);
 }
 
 export interface User {
@@ -29,13 +35,13 @@ export interface Session {
 }
 
 // Create admin user if it doesn't exist
-export function ensureAdminUser(): void {
+export async function ensureAdminUser(): Promise<void> {
   const db = getDb();
   const existing = db.prepare('SELECT id FROM users WHERE username = ?').get('admin');
 
   if (!existing) {
     const id = nanoid();
-    const passwordHash = hashPassword('password');
+    const passwordHash = await hashPassword('password');
     db.prepare(`
       INSERT INTO users (id, username, display_name, password_hash, is_admin, provider)
       VALUES (?, ?, ?, ?, ?, ?)
@@ -44,7 +50,7 @@ export function ensureAdminUser(): void {
 }
 
 // Login with username and password
-export function login(username: string, password: string): { user: User; sessionId: string } | null {
+export async function login(username: string, password: string): Promise<{ user: User; sessionId: string } | null> {
   const db = getDb();
 
   const user = db.prepare(`
@@ -56,7 +62,8 @@ export function login(username: string, password: string): { user: User; session
     return null;
   }
 
-  if (!verifyPassword(password, user.password_hash)) {
+  const isValid = await verifyPassword(password, user.password_hash);
+  if (!isValid) {
     return null;
   }
 
@@ -150,7 +157,7 @@ export function getSessionById(sessionId: string): { user: User; session: Sessio
 }
 
 // Register a new user
-export function register(username: string, password: string): { user: User; sessionId: string } | { error: string } {
+export async function register(username: string, password: string): Promise<{ user: User; sessionId: string } | { error: string }> {
   const db = getDb();
 
   // Check if username exists
@@ -161,7 +168,7 @@ export function register(username: string, password: string): { user: User; sess
 
   // Create user
   const id = nanoid();
-  const passwordHash = hashPassword(password);
+  const passwordHash = await hashPassword(password);
 
   db.prepare(`
     INSERT INTO users (id, username, password_hash, is_admin, provider)
@@ -252,9 +259,9 @@ export function loginWithOAuth(provider: string, providerId: string, profile: {
 }
 
 // Update user password (for admin break-glass)
-export function updatePassword(userId: string, newPassword: string): boolean {
+export async function updatePassword(userId: string, newPassword: string): Promise<boolean> {
   const db = getDb();
-  const passwordHash = hashPassword(newPassword);
+  const passwordHash = await hashPassword(newPassword);
 
   const result = db.prepare(`
     UPDATE users SET password_hash = ?, updated_at = unixepoch()
@@ -265,9 +272,9 @@ export function updatePassword(userId: string, newPassword: string): boolean {
 }
 
 // Update password by username (for admin break-glass via CLI or route)
-export function updatePasswordByUsername(username: string, newPassword: string): boolean {
+export async function updatePasswordByUsername(username: string, newPassword: string): Promise<boolean> {
   const db = getDb();
-  const passwordHash = hashPassword(newPassword);
+  const passwordHash = await hashPassword(newPassword);
 
   const result = db.prepare(`
     UPDATE users SET password_hash = ?, updated_at = unixepoch()

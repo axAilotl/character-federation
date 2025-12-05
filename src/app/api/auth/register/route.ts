@@ -43,7 +43,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const result = register(username, password);
+    const result = await register(username, password);
 
     if ('error' in result) {
       return NextResponse.json(
