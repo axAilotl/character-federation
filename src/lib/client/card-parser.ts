@@ -1,9 +1,9 @@
 /**
  * Client-side card parser using character-foundry packages
  */
-import { parseCard, type ParseResult, type ExtractedAsset as FoundryAsset } from '@/lib/character-foundry/loader';
-import { toUint8Array } from '@/lib/character-foundry';
-import type { CCv3Data, CCv3CharacterBook } from '@/lib/character-foundry/schemas';
+import { parseCard, type ParseResult, type ExtractedAsset as FoundryAsset } from '@character-foundry/loader';
+import { toUint8Array } from '@character-foundry/core';
+import type { CCv3Data, CCv3CharacterBook } from '@character-foundry/schemas';
 import { countCardTokens, type TokenCounts } from './tokenizer';
 
 export type SourceFormat = 'png' | 'json' | 'charx' | 'voxta';

@@ -2,10 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getCardBySlug, incrementDownloads, getCardVersionById } from '@/lib/db/cards';
 import { isCloudflareRuntime } from '@/lib/db';
 import { getR2 } from '@/lib/cloudflare/env';
-import { embedIntoPNG } from '@/lib/character-foundry/png';
-import { toUint8Array } from '@/lib/character-foundry';
+import { embedIntoPNG } from '@character-foundry/png';
+import { toUint8Array } from '@character-foundry/core';
 import { getSession } from '@/lib/auth';
-import type { CCv2Data, CCv3Data } from '@/lib/character-foundry/schemas';
+import type { CCv2Data, CCv3Data } from '@character-foundry/schemas';
 
 interface RouteParams {
   params: Promise<{ slug: string }>;

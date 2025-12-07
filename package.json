@@ -20,6 +20,10 @@
     "cf:r2:create": "wrangler r2 bucket create cardshub-uploads"
   },
   "dependencies": {
+    "@character-foundry/core": "^0.0.1",
+    "@character-foundry/loader": "^0.1.0",
+    "@character-foundry/png": "^0.0.1",
+    "@character-foundry/schemas": "^0.0.1",
     "@opennextjs/cloudflare": "^1.0.0",
     "bcryptjs": "^3.0.3",
     "better-sqlite3": "^12.4.6",

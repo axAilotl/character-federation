@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCards, createCard, computeContentHash, checkBlockedTags } from '@/lib/db/cards';
-import { parseCard, type ParseResult, type ExtractedAsset } from '@/lib/character-foundry/loader';
-import { toUint8Array } from '@/lib/character-foundry';
+import { parseCard, type ParseResult, type ExtractedAsset } from '@character-foundry/loader';
+import { toUint8Array } from '@character-foundry/core';
 import { countCardTokens } from '@/lib/client/tokenizer';
 import { generateThumbnailBuffer } from '@/lib/image/thumbnail';
 import { saveAssets } from '@/lib/image';
