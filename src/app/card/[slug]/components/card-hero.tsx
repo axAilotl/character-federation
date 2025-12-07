@@ -52,6 +52,30 @@ function getDownloadFormat(sourceFormat: string): 'png' | 'original' {
   return sourceFormat === 'charx' || sourceFormat === 'voxta' ? 'original' : 'png';
 }
 
+type CardVisibility = 'public' | 'private' | 'unlisted' | 'nsfw_only' | 'blocked';
+
+const VISIBILITY_OPTIONS: { value: CardVisibility; label: string; icon: string }[] = [
+  { value: 'public', label: 'Public', icon: '🌐' },
+  { value: 'unlisted', label: 'Unlisted', icon: '🔗' },
+  { value: 'private', label: 'Private', icon: '🔒' },
+];
+
+function VisibilityBadge({ visibility }: { visibility: CardVisibility }) {
+  const config: Record<CardVisibility, { label: string; className: string; icon: string }> = {
+    public: { label: 'Public', className: 'bg-green-500/20 text-green-400', icon: '🌐' },
+    private: { label: 'Private', className: 'bg-red-500/20 text-red-400', icon: '🔒' },
+    unlisted: { label: 'Unlisted', className: 'bg-yellow-500/20 text-yellow-400', icon: '🔗' },
+    nsfw_only: { label: 'NSFW Only', className: 'bg-pink-500/20 text-pink-400', icon: '🔞' },
+    blocked: { label: 'Blocked', className: 'bg-gray-500/20 text-gray-400', icon: '⛔' },
+  };
+  const { label, className, icon } = config[visibility] || config.public;
+  return (
+    <span className={`text-xs px-2 py-0.5 rounded-full ${className}`}>
+      {icon} {label}
+    </span>
+  );
+}
+
 export function CardHero({ card, permanentTokens, onDownload }: CardHeroProps) {
   const { user } = useAuth();
   const router = useRouter();
@@ -59,6 +83,11 @@ export function CardHero({ card, permanentTokens, onDownload }: CardHeroProps) {
   const [isFavorited, setIsFavorited] = useState(false);
   const [favoritesCount, setFavoritesCount] = useState(card.favoritesCount);
   const [isTogglingFavorite, setIsTogglingFavorite] = useState(false);
+  const [currentVisibility, setCurrentVisibility] = useState<CardVisibility>(card.visibility);
+  const [isEditingVisibility, setIsEditingVisibility] = useState(false);
+  const [isUpdatingVisibility, setIsUpdatingVisibility] = useState(false);
+
+  const isOwner = user && card.uploader?.id === user.id;
 
   useEffect(() => {
     if (user && card) {
@@ -91,6 +120,34 @@ export function CardHero({ card, permanentTokens, onDownload }: CardHeroProps) {
       console.error('Error toggling favorite:', error);
     } finally {
       setIsTogglingFavorite(false);
+    }
+  };
+
+  const handleVisibilityChange = async (newVisibility: CardVisibility) => {
+    if (newVisibility === currentVisibility) {
+      setIsEditingVisibility(false);
+      return;
+    }
+
+    setIsUpdatingVisibility(true);
+    try {
+      const res = await fetch(`/api/cards/${card.slug}/visibility`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ visibility: newVisibility }),
+      });
+
+      if (res.ok) {
+        setCurrentVisibility(newVisibility);
+        setIsEditingVisibility(false);
+      } else {
+        const data = await res.json();
+        alert(data.error || 'Failed to update visibility');
+      }
+    } catch {
+      alert('An error occurred while updating visibility');
+    } finally {
+      setIsUpdatingVisibility(false);
     }
   };
 
@@ -243,6 +300,47 @@ export function CardHero({ card, permanentTokens, onDownload }: CardHeroProps) {
               </div>
 
               <FormatBadge format={card.sourceFormat} specVersion={card.specVersion} />
+
+              {/* Visibility badge with edit dropdown */}
+              <div className="relative">
+                {isOwner && !isEditingVisibility ? (
+                  <button
+                    onClick={() => setIsEditingVisibility(true)}
+                    className="flex items-center gap-1 hover:opacity-80 transition-opacity"
+                    title="Click to change visibility"
+                  >
+                    <VisibilityBadge visibility={currentVisibility} />
+                    <svg className="w-3 h-3 text-starlight/50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                    </svg>
+                  </button>
+                ) : isOwner && isEditingVisibility ? (
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={currentVisibility}
+                      onChange={(e) => handleVisibilityChange(e.target.value as CardVisibility)}
+                      disabled={isUpdatingVisibility}
+                      className="px-2 py-1 text-xs bg-deep-space border border-nebula/30 rounded text-starlight"
+                    >
+                      {VISIBILITY_OPTIONS.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.icon} {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={() => setIsEditingVisibility(false)}
+                      className="text-starlight/50 hover:text-starlight"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                ) : (
+                  <VisibilityBadge visibility={currentVisibility} />
+                )}
+              </div>
 
               {/* Asset count for charx/voxta */}
               {card.hasAssets && card.assetsCount > 0 && (

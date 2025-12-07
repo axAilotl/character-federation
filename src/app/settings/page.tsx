@@ -191,6 +191,217 @@ function BannedTagsManager({
   );
 }
 
+interface TagPreference {
+  tagId: number;
+  tagName: string;
+  tagSlug: string;
+  preference: 'follow' | 'block';
+}
+
+function TagPreferencesManager() {
+  const [allTags, setAllTags] = useState<TagInfo[]>([]);
+  const [preferences, setPreferences] = useState<TagPreference[]>([]);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    async function fetchData() {
+      try {
+        // Fetch all tags
+        const tagsRes = await fetch('/api/tags');
+        if (tagsRes.ok) {
+          const data = await tagsRes.json();
+          const tags: TagInfo[] = [];
+          for (const group of data) {
+            tags.push(...group.tags);
+          }
+          setAllTags(tags);
+        }
+
+        // Fetch user's tag preferences
+        const prefsRes = await fetch('/api/users/me/tags');
+        if (prefsRes.ok) {
+          const data = await prefsRes.json();
+          setPreferences(data.preferences || []);
+        }
+      } catch (err) {
+        console.error('Error fetching tag data:', err);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    fetchData();
+  }, []);
+
+  const followedTags = useMemo(() =>
+    preferences.filter(p => p.preference === 'follow'),
+    [preferences]
+  );
+
+  const blockedTags = useMemo(() =>
+    preferences.filter(p => p.preference === 'block'),
+    [preferences]
+  );
+
+  // Filter tags by search term, excluding already preferenced tags
+  const filteredTags = useMemo(() => {
+    if (!searchTerm.trim()) return [];
+    const term = searchTerm.toLowerCase();
+    const existingTagIds = new Set(preferences.map(p => p.tagId));
+    return allTags
+      .filter(tag =>
+        !existingTagIds.has(tag.id) &&
+        (tag.name.toLowerCase().includes(term) || tag.slug.includes(term))
+      )
+      .slice(0, 10);
+  }, [allTags, searchTerm, preferences]);
+
+  const updatePreference = async (tagId: number, tagName: string, tagSlug: string, preference: 'follow' | 'block' | null) => {
+    setIsSaving(true);
+    try {
+      const res = await fetch('/api/users/me/tags', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tagId, preference }),
+      });
+
+      if (res.ok) {
+        if (preference === null) {
+          setPreferences(prev => prev.filter(p => p.tagId !== tagId));
+        } else {
+          const existing = preferences.find(p => p.tagId === tagId);
+          if (existing) {
+            setPreferences(prev => prev.map(p =>
+              p.tagId === tagId ? { ...p, preference } : p
+            ));
+          } else {
+            setPreferences(prev => [...prev, { tagId, tagName, tagSlug, preference }]);
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Error updating preference:', err);
+    } finally {
+      setIsSaving(false);
+      setSearchTerm('');
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Follow tags */}
+      <div>
+        <div className="font-medium text-starlight mb-1 flex items-center gap-2">
+          <span className="text-green-400">+</span> Followed Tags
+        </div>
+        <div className="text-sm text-starlight/60 mb-3">
+          Cards with these tags will appear in your feed
+        </div>
+        {followedTags.length > 0 ? (
+          <div className="flex flex-wrap gap-2">
+            {followedTags.map(pref => (
+              <span
+                key={pref.tagId}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-green-500/20 text-green-400 text-sm"
+              >
+                {pref.tagName}
+                <button
+                  onClick={() => updatePreference(pref.tagId, pref.tagName, pref.tagSlug, null)}
+                  disabled={isSaving}
+                  className="hover:text-green-300 transition-colors"
+                  title="Unfollow"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </span>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-starlight/40 italic">No tags followed</p>
+        )}
+      </div>
+
+      {/* Block tags */}
+      <div>
+        <div className="font-medium text-starlight mb-1 flex items-center gap-2">
+          <span className="text-red-400">-</span> Blocked Tags
+        </div>
+        <div className="text-sm text-starlight/60 mb-3">
+          Cards with these tags will be hidden from your feed
+        </div>
+        {blockedTags.length > 0 ? (
+          <div className="flex flex-wrap gap-2">
+            {blockedTags.map(pref => (
+              <span
+                key={pref.tagId}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-red-500/20 text-red-400 text-sm"
+              >
+                {pref.tagName}
+                <button
+                  onClick={() => updatePreference(pref.tagId, pref.tagName, pref.tagSlug, null)}
+                  disabled={isSaving}
+                  className="hover:text-red-300 transition-colors"
+                  title="Unblock"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </span>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-starlight/40 italic">No tags blocked</p>
+        )}
+      </div>
+
+      {/* Search and add */}
+      <div>
+        <div className="font-medium text-starlight mb-2">Add Tag Preference</div>
+        <div className="relative">
+          <Input
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            placeholder="Search tags..."
+            disabled={isLoading}
+          />
+          {filteredTags.length > 0 && (
+            <div className="absolute top-full left-0 right-0 mt-1 bg-cosmic-teal border border-nebula/30 rounded-lg shadow-lg z-10 max-h-48 overflow-y-auto">
+              {filteredTags.map(tag => (
+                <div
+                  key={tag.slug}
+                  className="flex items-center justify-between px-3 py-2 text-sm text-starlight hover:bg-nebula/10"
+                >
+                  <span>{tag.name}</span>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => updatePreference(tag.id, tag.name, tag.slug, 'follow')}
+                      disabled={isSaving}
+                      className="px-2 py-1 text-xs rounded bg-green-500/20 text-green-400 hover:bg-green-500/30"
+                    >
+                      Follow
+                    </button>
+                    <button
+                      onClick={() => updatePreference(tag.id, tag.name, tag.slug, 'block')}
+                      disabled={isSaving}
+                      className="px-2 py-1 text-xs rounded bg-red-500/20 text-red-400 hover:bg-red-500/30"
+                    >
+                      Block
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 interface UserProfile {
   id: string;
   username: string;
@@ -421,6 +632,13 @@ export default function SettingsPage() {
             onUpdate={(tags) => updateSettings({ bannedTags: tags })}
           />
         </SettingsSection>
+
+        {/* Tag Preferences - only show if logged in */}
+        {user && (
+          <SettingsSection title="Tag Preferences (Feed)">
+            <TagPreferencesManager />
+          </SettingsSection>
+        )}
 
         <SettingsSection title="Interface">
           <Toggle

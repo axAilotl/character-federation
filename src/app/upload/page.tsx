@@ -18,6 +18,13 @@ interface ParseState {
 }
 
 type UploadStage = 'preparing' | 'uploading' | 'processing' | null;
+type CardVisibility = 'public' | 'private' | 'unlisted';
+
+const VISIBILITY_OPTIONS: { value: CardVisibility; label: string; description: string }[] = [
+  { value: 'public', label: 'Public', description: 'Visible to everyone, appears in search and browse' },
+  { value: 'unlisted', label: 'Unlisted', description: 'Only accessible via direct link' },
+  { value: 'private', label: 'Private', description: 'Only visible to you' },
+];
 
 export default function UploadPage() {
   const router = useRouter();
@@ -29,6 +36,7 @@ export default function UploadPage() {
   const [uploadStage, setUploadStage] = useState<UploadStage>(null);
   const [error, setError] = useState<string | null>(null);
   const [parseState, setParseState] = useState<ParseState>({ status: 'idle' });
+  const [visibility, setVisibility] = useState<CardVisibility>('public');
 
   const handleDrag = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -149,6 +157,7 @@ export default function UploadPage() {
         metadata: card.metadata,
         tags: card.tags,
         contentHash,
+        visibility,
         // Send the raw card JSON for storage
         cardData: JSON.stringify(card.raw),
       };
@@ -400,6 +409,38 @@ export default function UploadPage() {
         {error && (
           <div className="mt-4 p-4 rounded-lg bg-red-500/20 border border-red-500/40 text-red-400">
             {error}
+          </div>
+        )}
+
+        {/* Visibility selector */}
+        {file && parseState.status === 'parsed' && (
+          <div className="mt-6 glass rounded-xl p-4">
+            <h3 className="font-semibold text-starlight mb-3">Visibility</h3>
+            <div className="space-y-2">
+              {VISIBILITY_OPTIONS.map((option) => (
+                <label
+                  key={option.value}
+                  className={`flex items-start gap-3 p-3 rounded-lg cursor-pointer transition-colors ${
+                    visibility === option.value
+                      ? 'bg-nebula/20 border border-nebula/50'
+                      : 'bg-deep-space/30 border border-transparent hover:border-nebula/20'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="visibility"
+                    value={option.value}
+                    checked={visibility === option.value}
+                    onChange={(e) => setVisibility(e.target.value as CardVisibility)}
+                    className="mt-1"
+                  />
+                  <div>
+                    <div className="font-medium text-starlight">{option.label}</div>
+                    <div className="text-sm text-starlight/60">{option.description}</div>
+                  </div>
+                </label>
+              ))}
+            </div>
           </div>
         )}
 
