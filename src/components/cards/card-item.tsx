@@ -169,21 +169,15 @@ export function CardItem({ card, onQuickView }: CardItemProps) {
           {/* Creator name and uploader - clickable */}
           <div className="text-xs text-starlight/70 line-clamp-1 mb-1.5">
             {card.creator && (
-              <Link
-                href={`/explore?search=${encodeURIComponent(card.creator)}`}
-                onClick={handleCreatorClick}
-                className="hover:text-nebula transition-colors"
-              >
-                by {card.creator}
-              </Link>
+              <span>by {card.creator}</span>
             )}
-            {!card.creator && card.uploader && (
+            {card.uploader && (
               <Link
                 href={`/user/${card.uploader.username}`}
                 onClick={handleCreatorClick}
                 className="hover:text-nebula transition-colors"
               >
-                by @{card.uploader.username}
+                {card.creator ? ` (@${card.uploader.username})` : `by @${card.uploader.username}`}
               </Link>
             )}
           </div>

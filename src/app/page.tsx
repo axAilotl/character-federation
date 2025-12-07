@@ -110,7 +110,11 @@ function FeedCardItem({ card }: { card: FeedCard }) {
 
         {/* Uploader */}
         {card.uploader && (
-          <div className="flex items-center gap-2 pt-2 border-t border-nebula/10">
+          <Link
+            href={`/user/${card.uploader.username}`}
+            onClick={(e) => e.stopPropagation()}
+            className="flex items-center gap-2 pt-2 border-t border-nebula/10 hover:bg-nebula/10 -mx-3 px-3 -mb-3 pb-3 rounded-b-xl transition-colors"
+          >
             {card.uploader.avatarUrl ? (
               <Image
                 src={card.uploader.avatarUrl}
@@ -124,10 +128,10 @@ function FeedCardItem({ card }: { card: FeedCard }) {
                 {card.uploader.username[0].toUpperCase()}
               </div>
             )}
-            <span className="text-xs text-starlight/60">
+            <span className="text-xs text-starlight/60 hover:text-nebula transition-colors">
               {card.uploader.displayName || card.uploader.username}
             </span>
-          </div>
+          </Link>
         )}
       </div>
     </Link>
