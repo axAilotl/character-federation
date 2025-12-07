@@ -13,6 +13,9 @@ A platform for sharing, discovering, and managing AI character cards. Supports C
 - **Asset extraction** - Embedded images, audio, and custom assets from packages
 - **Admin panel** - Moderation, visibility controls, user management
 - **WebP thumbnails** - Cloudflare Image Transformations for optimized delivery
+- **Personalized feed** - Content from followed users and tags, plus trending
+- **Social features** - Follow users, follow/block tags, user profiles with bio
+- **Privacy controls** - Public, private, and unlisted visibility on uploads
 
 ## Tech Stack
 
@@ -91,8 +94,11 @@ See [CLAUDE.md](./CLAUDE.md) for full API documentation.
 - `GET /api/cards` - List cards with filtering
 - `POST /api/cards` - Upload card (auth required)
 - `GET /api/cards/[slug]/download?format=png|json|original` - Download card
+- `PUT /api/cards/[slug]/visibility` - Update card visibility (owner only)
 - `GET /api/search?q=query` - Full-text search
 - `GET /api/tags` - List tags by category
+- `GET /api/feed` - Personalized feed (followed users/tags + trending)
+- `GET /api/users/me/tags` - User tag preferences (follow/block)
 
 ## License
 

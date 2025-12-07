@@ -172,6 +172,11 @@
 - [x] **Social feed** - Personalized feed combining followed users, followed tags, and trending (/api/feed)
 - [x] **Profile page updates** - Bio display, follower/following counts, follow button, custom CSS injection
 
+**UI Pages:**
+- [x] **Feed page** (`/feed`) - Personalized feed with reason badges (from following/followed tag/trending)
+- [x] **Tag preferences UI** (`/settings`) - Browse, search, follow/block tags in settings
+- [x] **Sidebar feed link** - Added Feed to main navigation
+
 **Schema additions:**
 - `users.bio` (TEXT, max 2000 chars)
 - `users.profile_css` (TEXT, max 10000 chars)
@@ -188,6 +193,12 @@
 - [x] **Private visibility** - Cards visible only to owner (distinct from blocked)
 - [x] **Unlisted visibility** - Cards accessible via direct link only, not in search/browse
 - [x] Visibility states: `public` | `private` | `unlisted` | `nsfw_only` | `blocked`
+
+**UI Pages:**
+- [x] **Upload visibility selector** (`/upload`) - Choose public/private/unlisted when uploading
+- [x] **Card detail visibility editor** (`/card/[slug]`) - Owners can view and change visibility
+- [x] **Visibility badge** - Shows current visibility status with icon on card detail page
+- [x] **Owner visibility API** (`PUT /api/cards/[slug]/visibility`) - Owners can update to public/private/unlisted
 
 **Implementation details:**
 - Card detail API (`/api/cards/[slug]`) enforces visibility permissions

@@ -73,20 +73,22 @@ npm run admin:reset-pw <user> <pass>  # Reset user password
 ```
 src/
 ├── app/                    # Next.js App Router pages and API routes
-│   ├── api/cards/          # Card CRUD, download, vote, favorite, comment endpoints
+│   ├── api/cards/          # Card CRUD, download, vote, favorite, comment, visibility endpoints
 │   ├── api/auth/           # Login, logout, register, session, Discord OAuth
 │   ├── api/admin/          # Admin-only endpoints (stats, cards, reports, users)
-│   ├── api/users/          # User profiles and favorites
+│   ├── api/users/          # User profiles, favorites, tag preferences, follows
+│   ├── api/feed/           # Personalized feed endpoint
 │   ├── api/search/         # Full-text search endpoint
 │   ├── api/tags/           # Tags listing (cached 60s)
 │   ├── api/uploads/        # Static file serving with visibility enforcement
 │   ├── admin/              # Admin panel pages (dashboard, cards, reports, users)
 │   ├── explore/            # Main grid view with filtering
+│   ├── feed/               # Personalized feed page
 │   ├── card/[slug]/        # Card detail page
 │   ├── user/[username]/    # User profile page
-│   ├── upload/             # Card upload page
+│   ├── upload/             # Card upload page (with visibility selector)
 │   ├── login/              # Login/register page
-│   └── settings/           # User settings page
+│   └── settings/           # User settings page (with tag preferences)
 ├── components/
 │   ├── ui/                 # Base components (Button, Input, Modal, Badge)
 │   ├── layout/             # AppShell, Header, Sidebar
@@ -238,6 +240,7 @@ SQLite database (`cardshub.db`) with tables:
 | GET | /api/cards/[slug]/comments | No | Get comments |
 | POST | /api/cards/[slug]/comments | Yes | Add comment |
 | POST | /api/cards/[slug]/report | Yes | Report card for moderation |
+| PUT | /api/cards/[slug]/visibility | Yes | Update visibility (owner: public/private/unlisted) |
 
 **Search & Tags**
 | Method | Endpoint | Auth | Description |
