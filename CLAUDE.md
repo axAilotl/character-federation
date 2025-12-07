@@ -2,6 +2,28 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## CRITICAL: Feature Completeness Checklist
+
+**A feature is NOT done until ALL of the following are complete:**
+
+1. **Database** - Schema/migrations if needed
+2. **API Endpoint** - Route handler with validation
+3. **Frontend Page** - With `AppShell` wrapper
+4. **UI Links** - Navigation links TO the feature from relevant places
+5. **Component Integration** - Feature accessible from the UI, not just via URL
+6. **Tested in Browser** - Actually click through and verify it works
+
+**NEVER** consider a feature complete if:
+- The API exists but no UI calls it
+- The page exists but has no links to it
+- The page exists but is missing `AppShell` layout wrapper
+- The backend is done but frontend is "TODO"
+
+**Every new page MUST:**
+- Be wrapped in `<AppShell>` component
+- Have navigation links added to relevant places (header, sidebar, card items, etc.)
+- Be reachable by clicking through the UI, not just typing the URL
+
 ## Project Overview
 
 CardsHub is a platform for sharing, discovering, and managing AI character cards (CCv2/CCv3 format). It's a clone of Wyvern.chat's explore functionality built with Next.js 15.
