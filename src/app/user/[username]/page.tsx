@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
+import { AppShell } from '@/components/layout';
 import { CardGrid } from '@/components/cards/card-grid';
 import { CardModal } from '@/components/cards/card-modal';
 import type { CardListItem } from '@/types/card';
@@ -169,29 +170,34 @@ export default function UserProfilePage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-nebula"></div>
-      </div>
+      <AppShell>
+        <div className="min-h-screen flex items-center justify-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-nebula"></div>
+        </div>
+      </AppShell>
     );
   }
 
   if (error || !profile) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="text-6xl mb-4">😕</div>
-          <h1 className="text-2xl font-bold text-starlight mb-2">{error || 'User not found'}</h1>
-          <p className="text-starlight/70 mb-4">The user you&apos;re looking for doesn&apos;t exist.</p>
-          <Link href="/explore" className="text-nebula hover:underline">
-            Browse cards
-          </Link>
+      <AppShell>
+        <div className="min-h-screen flex items-center justify-center">
+          <div className="text-center">
+            <div className="text-6xl mb-4">😕</div>
+            <h1 className="text-2xl font-bold text-starlight mb-2">{error || 'User not found'}</h1>
+            <p className="text-starlight/70 mb-4">The user you&apos;re looking for doesn&apos;t exist.</p>
+            <Link href="/explore" className="text-nebula hover:underline">
+              Browse cards
+            </Link>
+          </div>
         </div>
-      </div>
+      </AppShell>
     );
   }
 
   return (
-    <div className="min-h-screen profile-container">
+    <AppShell>
+      <div className="min-h-screen profile-container">
       {/* Profile Header */}
       <div className="bg-cosmic-teal/30 border-b border-nebula/20">
         <div className="max-w-7xl mx-auto px-4 py-8">
@@ -393,6 +399,7 @@ export default function UserProfilePage() {
         isOpen={!!selectedCard}
         onClose={() => setSelectedCard(null)}
       />
-    </div>
+      </div>
+    </AppShell>
   );
 }
