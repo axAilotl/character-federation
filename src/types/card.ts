@@ -184,7 +184,7 @@ export interface ParsedCard {
 }
 
 // Visibility states for cards
-export type CardVisibility = 'public' | 'nsfw_only' | 'unlisted' | 'blocked';
+export type CardVisibility = 'public' | 'private' | 'nsfw_only' | 'unlisted' | 'blocked';
 
 // Moderation states
 export type ModerationState = 'ok' | 'review' | 'blocked';

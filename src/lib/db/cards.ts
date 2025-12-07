@@ -809,7 +809,7 @@ export async function reportCard(cardId: string, reporterId: string, reason: str
 /**
  * Update card visibility (admin only)
  */
-export async function updateCardVisibility(cardId: string, visibility: 'public' | 'nsfw_only' | 'unlisted' | 'blocked'): Promise<void> {
+export async function updateCardVisibility(cardId: string, visibility: 'public' | 'private' | 'nsfw_only' | 'unlisted' | 'blocked'): Promise<void> {
   const db = await getDb();
   await db.prepare('UPDATE cards SET visibility = ?, updated_at = unixepoch() WHERE id = ?').run(visibility, cardId);
 }

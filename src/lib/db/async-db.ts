@@ -149,10 +149,10 @@ function wrapD1(db: D1Database): AsyncDb {
 export function getAsyncDb(): AsyncDb {
   if (localDbInstance) return localDbInstance;
 
-  // Use eval to completely hide the require from static analysis
-  // This is the only way to prevent bundlers from including these modules
-  // eslint-disable-next-line no-eval
-  const dynamicRequire = eval('require');
+  // Use new Function to completely hide the require from static analysis
+  // This is more robust than eval('require') for hiding from bundlers
+  // eslint-disable-next-line @typescript-eslint/no-implied-eval
+  const dynamicRequire = new Function('moduleName', 'return require(moduleName)');
   const Database = dynamicRequire('better-sqlite3');
   const { readFileSync } = dynamicRequire('fs');
   const { join } = dynamicRequire('path');

@@ -20,12 +20,6 @@
     "cf:r2:create": "wrangler r2 bucket create cardshub-uploads"
   },
   "dependencies": {
-    "@character-foundry/charx": "file:../../card-ecosystem/character-foundry/packages/charx",
-    "@character-foundry/core": "file:../../card-ecosystem/character-foundry/packages/core",
-    "@character-foundry/loader": "file:../../card-ecosystem/character-foundry/packages/loader",
-    "@character-foundry/png": "file:../../card-ecosystem/character-foundry/packages/png",
-    "@character-foundry/schemas": "file:../../card-ecosystem/character-foundry/packages/schemas",
-    "@character-foundry/voxta": "file:../../card-ecosystem/character-foundry/packages/voxta",
     "@opennextjs/cloudflare": "^1.0.0",
     "bcryptjs": "^3.0.3",
     "better-sqlite3": "^12.4.6",
