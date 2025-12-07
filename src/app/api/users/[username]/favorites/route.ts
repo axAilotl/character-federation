@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAsyncDb } from '@/lib/db/async-db';
+import { getDatabase } from '@/lib/db/async-db';
+import { getSession } from '@/lib/auth';
 import type { CardListItem } from '@/types/card';
 
 /**
@@ -16,7 +17,7 @@ export async function GET(
     const page = parseInt(searchParams.get('page') || '1');
     const limit = Math.min(parseInt(searchParams.get('limit') || '24'), 100);
 
-    const db = getAsyncDb();
+    const db = await getDatabase();
     const offset = (page - 1) * limit;
 
     // Get user by username
@@ -100,9 +101,24 @@ export async function GET(
       favorited_at: number;
     }>(user.id, limit, offset);
 
+    // Get session to check viewer's favorites
+    const session = await getSession();
+    const viewerId = session?.user?.id;
+
     // Get tags for cards
     const cardIds = rows.map(r => r.id);
     const tagsMap = new Map<string, { id: number; name: string; slug: string; category: string | null }[]>();
+
+    // Get viewer's favorites for these cards (if logged in)
+    let viewerFavorites = new Set<string>();
+    if (viewerId && cardIds.length > 0) {
+      const favPlaceholders = cardIds.map(() => '?').join(', ');
+      const favRows = await db.prepare(`
+        SELECT card_id FROM favorites
+        WHERE user_id = ? AND card_id IN (${favPlaceholders})
+      `).all<{ card_id: string }>(viewerId, ...cardIds);
+      viewerFavorites = new Set(favRows.map(r => r.card_id));
+    }
 
     if (cardIds.length > 0) {
       const placeholders = cardIds.map(() => '?').join(', ');
@@ -148,12 +164,14 @@ export async function GET(
       tokensTotal: row.tokens_total,
       upvotes: row.upvotes,
       downvotes: row.downvotes,
+      score: row.upvotes - row.downvotes,
       favoritesCount: row.favorites_count,
       downloadsCount: row.downloads_count,
       commentsCount: row.comments_count,
       forksCount: row.forks_count,
       hasAlternateGreetings: row.has_alt_greetings === 1,
       alternateGreetingsCount: row.alt_greetings_count,
+      totalGreetingsCount: row.alt_greetings_count + 1,
       hasLorebook: row.has_lorebook === 1,
       lorebookEntriesCount: row.lorebook_entries_count,
       hasEmbeddedImages: row.has_embedded_images === 1,
@@ -167,6 +185,8 @@ export async function GET(
       } : null,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
+      // Include isFavorited for viewer (if logged in)
+      ...(viewerId && { isFavorited: viewerFavorites.has(row.id) }),
     }));
 
     return NextResponse.json({

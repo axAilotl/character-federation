@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { deleteCard } from '@/lib/db/cards';
-import { getAsyncDb } from '@/lib/db/async-db';
+import { getDatabase } from '@/lib/db/async-db';
 
 /**
  * DELETE /api/admin/users/[userId]
@@ -31,7 +31,7 @@ export async function DELETE(
       );
     }
 
-    const db = getAsyncDb();
+    const db = await getDatabase();
 
     // Get all cards owned by this user
     const userCards = await db.prepare('SELECT id FROM cards WHERE uploader_id = ?').all<{ id: string }>(userId);

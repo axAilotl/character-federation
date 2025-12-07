@@ -38,16 +38,16 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
 /**
  * DELETE /api/cards/[slug]
- * Delete a card (admin only)
+ * Delete a card (owner or admin)
  */
 export async function DELETE(request: NextRequest, { params }: RouteParams) {
   try {
     // Check authentication
     const session = await getSession();
-    if (!session || !session.user.isAdmin) {
+    if (!session) {
       return NextResponse.json(
-        { error: 'Forbidden: Admin access required' },
-        { status: 403 }
+        { error: 'Authentication required' },
+        { status: 401 }
       );
     }
 
@@ -58,6 +58,17 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json(
         { error: 'Card not found' },
         { status: 404 }
+      );
+    }
+
+    // Allow deletion if user is admin OR is the uploader
+    const isOwner = card.uploader?.id === session.user.id;
+    const isAdmin = session.user.isAdmin;
+
+    if (!isOwner && !isAdmin) {
+      return NextResponse.json(
+        { error: 'Forbidden: You can only delete your own cards' },
+        { status: 403 }
       );
     }
 

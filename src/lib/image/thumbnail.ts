@@ -1,4 +1,12 @@
-// Sharp is dynamically imported to avoid crashes on Cloudflare Workers
+/**
+ * Thumbnail Generation (Node.js only)
+ *
+ * On Cloudflare Workers, thumbnails are generated on-the-fly via
+ * /api/thumb/ using Cloudflare Image Transformations (cf.image).
+ *
+ * This module is only used for local Node.js development.
+ */
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let sharpModule: any = null;
 
@@ -13,20 +21,20 @@ export interface ThumbnailResult {
 export type ThumbnailType = 'main' | 'asset';
 
 const CONFIG = {
-  main: { portrait: 500, landscape: 1024, quality: 80 },
-  asset: { portrait: 300, landscape: 600, quality: 70 },
+  main: { portrait: 500, landscape: 750, quality: 80 },
+  asset: { portrait: 300, landscape: 450, quality: 70 },
 };
 
 /**
- * Generate a thumbnail buffer from an image buffer
- * Does NOT write to disk.
- * Note: Only works on Node.js (requires sharp). Returns null on Cloudflare Workers.
+ * Generate a thumbnail buffer from an image buffer using Sharp
+ * This is only used on Node.js - Cloudflare uses on-the-fly transformations
  */
 export async function generateThumbnailBuffer(
   imageBuffer: Buffer,
   type: ThumbnailType = 'main'
 ): Promise<ThumbnailResult> {
-  // Dynamically import sharp only when needed (Node.js only)
+  const config = CONFIG[type];
+
   if (!sharpModule) {
     try {
       sharpModule = (await import('sharp')).default;
@@ -35,8 +43,6 @@ export async function generateThumbnailBuffer(
     }
   }
 
-  const config = CONFIG[type];
-
   const image = sharpModule(imageBuffer);
   const metadata = await image.metadata();
 
@@ -44,24 +50,19 @@ export async function generateThumbnailBuffer(
   const originalHeight = metadata.height || 500;
   const isLandscape = originalWidth > originalHeight;
 
-  // Fixed width based on orientation
   const targetWidth = isLandscape ? config.landscape : config.portrait;
-  const width = targetWidth;
-  const height = Math.round((originalHeight * targetWidth) / originalWidth);
+  const targetHeight = Math.round((originalHeight * targetWidth) / originalWidth);
 
   const buffer = await image
-    .resize(width, height)
+    .resize(targetWidth, targetHeight)
     .webp({ quality: config.quality })
     .toBuffer();
 
   return {
     buffer,
-    width,
-    height,
+    width: targetWidth,
+    height: targetHeight,
     originalWidth,
     originalHeight,
   };
 }
-
-// Deprecated: Removed fs-based generateThumbnail
-// Use generateThumbnailBuffer and store() instead.

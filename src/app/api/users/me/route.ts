@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAsyncDb } from '@/lib/db/async-db';
+import { getDatabase } from '@/lib/db/async-db';
 import { getSession } from '@/lib/auth';
 
 /**
@@ -16,9 +16,9 @@ export async function GET() {
       );
     }
 
-    const db = getAsyncDb();
+    const db = await getDatabase();
     const user = await db.prepare(`
-      SELECT id, username, display_name, email, avatar_url, is_admin, created_at
+      SELECT id, username, display_name, email, avatar_url, bio, profile_css, is_admin, created_at
       FROM users WHERE id = ?
     `).get<{
       id: string;
@@ -26,6 +26,8 @@ export async function GET() {
       display_name: string | null;
       email: string | null;
       avatar_url: string | null;
+      bio: string | null;
+      profile_css: string | null;
       is_admin: number;
       created_at: number;
     }>(session.user.id);
@@ -43,6 +45,8 @@ export async function GET() {
       displayName: user.display_name,
       email: user.email,
       avatarUrl: user.avatar_url,
+      bio: user.bio,
+      profileCss: user.profile_css,
       isAdmin: user.is_admin === 1,
       createdAt: user.created_at,
     });
@@ -70,9 +74,9 @@ export async function PUT(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { displayName, email } = body;
+    const { displayName, email, bio, profileCss } = body;
 
-    const db = getAsyncDb();
+    const db = await getDatabase();
     const updates: string[] = [];
     const params: (string | null)[] = [];
 
@@ -114,6 +118,49 @@ export async function PUT(request: NextRequest) {
       params.push(email || null);
     }
 
+    // v1.1: Validate and add bio
+    if (bio !== undefined) {
+      if (bio && bio.length > 2000) {
+        return NextResponse.json(
+          { error: 'Bio too long (max 2000 characters)' },
+          { status: 400 }
+        );
+      }
+      updates.push('bio = ?');
+      params.push(bio || null);
+    }
+
+    // v1.1: Validate and add profile CSS
+    if (profileCss !== undefined) {
+      if (profileCss && profileCss.length > 10000) {
+        return NextResponse.json(
+          { error: 'Profile CSS too long (max 10000 characters)' },
+          { status: 400 }
+        );
+      }
+      // Basic CSS sanitization - remove potentially dangerous patterns
+      if (profileCss) {
+        const dangerousPatterns = [
+          /javascript:/gi,
+          /expression\s*\(/gi,
+          /url\s*\(\s*["']?\s*data:/gi,
+          /@import/gi,
+          /behavior\s*:/gi,
+          /-moz-binding/gi,
+        ];
+        for (const pattern of dangerousPatterns) {
+          if (pattern.test(profileCss)) {
+            return NextResponse.json(
+              { error: 'Invalid CSS: potentially dangerous patterns detected' },
+              { status: 400 }
+            );
+          }
+        }
+      }
+      updates.push('profile_css = ?');
+      params.push(profileCss || null);
+    }
+
     if (updates.length === 0) {
       return NextResponse.json(
         { error: 'No fields to update' },
@@ -130,7 +177,7 @@ export async function PUT(request: NextRequest) {
 
     // Return updated user
     const user = await db.prepare(`
-      SELECT id, username, display_name, email, avatar_url, is_admin, created_at
+      SELECT id, username, display_name, email, avatar_url, bio, profile_css, is_admin, created_at
       FROM users WHERE id = ?
     `).get<{
       id: string;
@@ -138,6 +185,8 @@ export async function PUT(request: NextRequest) {
       display_name: string | null;
       email: string | null;
       avatar_url: string | null;
+      bio: string | null;
+      profile_css: string | null;
       is_admin: number;
       created_at: number;
     }>(session.user.id);
@@ -148,6 +197,8 @@ export async function PUT(request: NextRequest) {
       displayName: user!.display_name,
       email: user!.email,
       avatarUrl: user!.avatar_url,
+      bio: user!.bio,
+      profileCss: user!.profile_css,
       isAdmin: user!.is_admin === 1,
       createdAt: user!.created_at,
     });

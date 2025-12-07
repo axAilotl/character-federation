@@ -1,11 +1,19 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import Link from 'next/link';
 import { AppShell } from '@/components/layout';
 import { useSettings } from '@/lib/settings';
 import { useAuth } from '@/lib/auth/context';
 import { Button, Input } from '@/components/ui';
+
+interface TagInfo {
+  id: number;
+  name: string;
+  slug: string;
+  category: string | null;
+  usage_count: number;
+}
 
 function Toggle({
   checked,
@@ -57,12 +65,140 @@ function SettingsSection({
   );
 }
 
+function BannedTagsManager({
+  bannedTags,
+  onUpdate,
+}: {
+  bannedTags: string[];
+  onUpdate: (tags: string[]) => void;
+}) {
+  const [allTags, setAllTags] = useState<TagInfo[]>([]);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    async function fetchTags() {
+      try {
+        const res = await fetch('/api/tags');
+        if (res.ok) {
+          const data = await res.json();
+          // Flatten the grouped tags
+          const tags: TagInfo[] = [];
+          for (const group of data) {
+            tags.push(...group.tags);
+          }
+          setAllTags(tags);
+        }
+      } catch (err) {
+        console.error('Error fetching tags:', err);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    fetchTags();
+  }, []);
+
+  // Filter tags by search term, excluding already banned tags
+  const filteredTags = useMemo(() => {
+    if (!searchTerm.trim()) return [];
+    const term = searchTerm.toLowerCase();
+    return allTags
+      .filter(tag =>
+        !bannedTags.includes(tag.slug) &&
+        (tag.name.toLowerCase().includes(term) || tag.slug.includes(term))
+      )
+      .slice(0, 10);
+  }, [allTags, searchTerm, bannedTags]);
+
+  // Get display names for banned tags
+  const bannedTagsWithNames = useMemo(() => {
+    return bannedTags.map(slug => {
+      const tag = allTags.find(t => t.slug === slug);
+      return { slug, name: tag?.name || slug };
+    });
+  }, [bannedTags, allTags]);
+
+  const addTag = (slug: string) => {
+    if (!bannedTags.includes(slug)) {
+      onUpdate([...bannedTags, slug]);
+    }
+    setSearchTerm('');
+  };
+
+  const removeTag = (slug: string) => {
+    onUpdate(bannedTags.filter(t => t !== slug));
+  };
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <div className="font-medium text-starlight mb-1">Hidden Tags</div>
+        <div className="text-sm text-starlight/60 mb-3">
+          Cards with these tags will be hidden from the explore page
+        </div>
+      </div>
+
+      {/* Search input */}
+      <div className="relative">
+        <Input
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          placeholder="Search tags to hide..."
+          disabled={isLoading}
+        />
+        {/* Dropdown with filtered tags */}
+        {filteredTags.length > 0 && (
+          <div className="absolute top-full left-0 right-0 mt-1 bg-cosmic-teal border border-nebula/30 rounded-lg shadow-lg z-10 max-h-48 overflow-y-auto">
+            {filteredTags.map(tag => (
+              <button
+                key={tag.slug}
+                onClick={() => addTag(tag.slug)}
+                className="w-full px-3 py-2 text-left text-sm text-starlight hover:bg-nebula/20 flex items-center justify-between"
+              >
+                <span>{tag.name}</span>
+                <span className="text-starlight/40 text-xs">{tag.usage_count} uses</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* List of banned tags */}
+      {bannedTagsWithNames.length > 0 ? (
+        <div className="flex flex-wrap gap-2">
+          {bannedTagsWithNames.map(tag => (
+            <span
+              key={tag.slug}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-red-500/20 text-red-400 text-sm"
+            >
+              {tag.name}
+              <button
+                onClick={() => removeTag(tag.slug)}
+                className="hover:text-red-300 transition-colors"
+                title="Remove"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </span>
+          ))}
+        </div>
+      ) : (
+        <p className="text-sm text-starlight/40 italic">No tags hidden</p>
+      )}
+    </div>
+  );
+}
+
 interface UserProfile {
   id: string;
   username: string;
   displayName: string | null;
   email: string | null;
   avatarUrl: string | null;
+  bio: string | null;
+  profileCss: string | null;
 }
 
 export default function SettingsPage() {
@@ -72,6 +208,8 @@ export default function SettingsPage() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
+  const [bio, setBio] = useState('');
+  const [profileCss, setProfileCss] = useState('');
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
@@ -89,6 +227,8 @@ export default function SettingsPage() {
         setProfile(data);
         setDisplayName(data.displayName || '');
         setEmail(data.email || '');
+        setBio(data.bio || '');
+        setProfileCss(data.profileCss || '');
       }
     } catch (err) {
       console.error('Error fetching profile:', err);
@@ -107,6 +247,8 @@ export default function SettingsPage() {
         body: JSON.stringify({
           displayName: displayName.trim() || null,
           email: email.trim() || null,
+          bio: bio.trim() || null,
+          profileCss: profileCss.trim() || null,
         }),
       });
 
@@ -190,6 +332,40 @@ export default function SettingsPage() {
                 </p>
               </div>
 
+              <div>
+                <label className="block text-sm font-medium text-starlight mb-1">
+                  Bio
+                </label>
+                <textarea
+                  value={bio}
+                  onChange={(e) => setBio(e.target.value)}
+                  placeholder="Tell others about yourself..."
+                  maxLength={2000}
+                  rows={4}
+                  className="w-full px-3 py-2 bg-deep-space border border-nebula/30 rounded-lg text-starlight placeholder:text-starlight/40 focus:outline-none focus:border-nebula resize-y"
+                />
+                <p className="text-xs text-starlight/50 mt-1">
+                  {bio.length}/2000 characters - Displayed on your public profile
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-starlight mb-1">
+                  Profile CSS
+                </label>
+                <textarea
+                  value={profileCss}
+                  onChange={(e) => setProfileCss(e.target.value)}
+                  placeholder={`.profile-container {\n  /* Your custom styles */\n}`}
+                  maxLength={10000}
+                  rows={6}
+                  className="w-full px-3 py-2 bg-deep-space border border-nebula/30 rounded-lg text-starlight placeholder:text-starlight/40 focus:outline-none focus:border-nebula resize-y font-mono text-sm"
+                />
+                <p className="text-xs text-starlight/50 mt-1">
+                  {profileCss.length}/10000 characters - Custom CSS applied to your profile page (MySpace style!)
+                </p>
+              </div>
+
               {message && (
                 <div className={`p-3 rounded-lg text-sm ${
                   message.type === 'success'
@@ -236,6 +412,13 @@ export default function SettingsPage() {
             onChange={(checked) => updateSettings({ blurNsfwContent: checked })}
             label="Blur NSFW content"
             description="Blur card images tagged as NSFW until hovered"
+          />
+        </SettingsSection>
+
+        <SettingsSection title="Content Filtering">
+          <BannedTagsManager
+            bannedTags={settings.bannedTags}
+            onUpdate={(tags) => updateSettings({ bannedTags: tags })}
           />
         </SettingsSection>
 

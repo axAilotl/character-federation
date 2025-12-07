@@ -16,7 +16,7 @@ CardsHub is a platform for sharing, discovering, and managing AI character cards
 - **Validation**: Zod schemas in `src/lib/validations/` for all API inputs
 - **Logging**: Winston (Node.js) / Console (Cloudflare Workers) with structured output
 - **Rate Limiting**: Sliding window algorithm with per-endpoint configs in `src/lib/rate-limit.ts`
-- **Testing**: Vitest with 100+ tests for validation, rate limiting, and utilities
+- **Testing**: Vitest with 185 tests (7 test files) covering validation schemas, rate limiting, and utilities
 - **Tokenizer**: tiktoken (cl100k_base encoding for GPT-4 compatible counts)
 - **Styling**: Tailwind CSS v4 with CSS-in-JS theme configuration
 - **Storage**: Abstracted with URL schemes (`file://`, `r2://`, future: `s3://`, `ipfs://`)
@@ -186,6 +186,16 @@ The `lib/storage/` module provides:
 - Asset metadata stored in `saved_assets` JSON column on card_versions
 - Supports images, audio, and custom asset types
 - Max upload size: 50MB (Cloudflare limit)
+- Parallel batch uploads (20 concurrent) for fast processing
+- For PNGs with embedded icons: uses small iconx (~30-50KB) instead of full container (avoids CF 10MB limit)
+
+### Download Formats
+The `/api/cards/[slug]/download` endpoint supports three formats:
+- `png` - Card embedded in PNG image (default)
+- `json` - Raw card JSON data
+- `original` - Original source file (.charx, .voxpkg, .png, .json)
+
+CharX and Voxta packages show a format-specific download button that serves the original package file.
 
 ### Tag System
 - Tags are extracted directly from the card's embedded tags field
@@ -200,12 +210,14 @@ SQLite database (`cardshub.db`) with tables:
 - `card_versions` - Immutable version snapshots with token counts, storage_url, content_hash
 - `tags` - Tag definitions with categories and usage counts
 - `card_tags` - Many-to-many relationship
-- `users` - User accounts with bcrypt password hashes and admin flag
+- `users` - User accounts with bcrypt password hashes, admin flag, bio, profile_css
 - `sessions` - Cookie-based session storage (30-day expiry)
 - `votes`, `favorites`, `comments`, `downloads` - User interactions
 - `reports` - Moderation reports
 - `cards_fts` - FTS5 virtual table for full-text search
 - `uploads` - Upload metadata for visibility enforcement
+- `tag_preferences` - User tag follow/block preferences (v1.1)
+- `user_follows` - Social following relationships (v1.1)
 
 ### API Endpoints
 
@@ -216,7 +228,7 @@ SQLite database (`cardshub.db`) with tables:
 | POST | /api/cards | Yes | Upload new card (PNG/JSON/CharX/Voxta) |
 | GET | /api/cards/[slug] | No | Get single card with head version |
 | DELETE | /api/cards/[slug] | Admin | Delete card |
-| GET | /api/cards/[slug]/download | No | Download card as PNG or JSON |
+| GET | /api/cards/[slug]/download | No | Download card (format: png, json, original) |
 | GET | /api/cards/[slug]/versions | No | Get version history |
 | POST | /api/cards/[slug]/vote | Yes | Vote on card (1 or -1) |
 | DELETE | /api/cards/[slug]/vote | Yes | Remove vote |
@@ -235,11 +247,22 @@ SQLite database (`cardshub.db`) with tables:
 **Users**
 | Method | Endpoint | Auth | Description |
 |--------|----------|------|-------------|
-| GET | /api/users/[username] | No | Get public user profile |
+| GET | /api/users/[username] | No | Get public user profile (includes bio, profileCss, followers/following counts) |
 | GET | /api/users/[username]/cards | No | Get cards uploaded by user |
 | GET | /api/users/[username]/favorites | No | Get user's favorited cards |
+| GET | /api/users/[username]/follow | Yes | Check if current user follows target user |
+| POST | /api/users/[username]/follow | Yes | Follow a user |
+| DELETE | /api/users/[username]/follow | Yes | Unfollow a user |
 | GET | /api/users/me | Yes | Get current user's profile |
-| PUT | /api/users/me | Yes | Update current user's profile |
+| PUT | /api/users/me | Yes | Update profile (displayName, email, bio, profileCss) |
+| GET | /api/users/me/tags | Yes | Get user's tag preferences (followed/blocked) |
+| PUT | /api/users/me/tags | Yes | Update single tag preference |
+| POST | /api/users/me/tags | Yes | Bulk update tag preferences |
+
+**Feed**
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| GET | /api/feed | No | Personalized feed (followed users + tags + trending, blocked tag filtering) |
 
 **Auth**
 | Method | Endpoint | Auth | Description |
@@ -367,14 +390,36 @@ logRateLimit(clientId, 'login', rl.allowed, rl.remaining);
 - Uses OpenNextJS adapter (`@opennextjs/cloudflare`)
 - D1 database binding for SQLite
 - R2 bucket binding for file storage
+- IMAGES binding for image transformations
 - Config in `wrangler.toml`
 - Build: `npm run cf:build` then `npm run cf:deploy`
-- Thumbnails use Cloudflare Image Resizing (`/cdn-cgi/image/...`) instead of Sharp
+
+### Cloudflare Images Binding
+Thumbnails use the IMAGES binding for on-the-fly WebP transformation:
+
+```typescript
+// src/lib/cloudflare/env.ts
+export async function getImages(): Promise<ImagesBinding | null>
+
+// Usage in /api/thumb/[...path]/route.ts
+const images = await getImages();
+const transformed = await images
+  .input(imageData)
+  .transform({ width: 500, height: 750, fit: 'cover' })
+  .output({ format: 'image/webp', quality: 80 });
+return transformed.response();
+```
+
+**IMPORTANT**: Image Transformations must be enabled in the Cloudflare Dashboard:
+1. Go to: https://dash.cloudflare.com/?to=/:account/images/transformations
+2. Select zone → Click "Enable for zone"
+
+Without this, thumbnails fall back to serving original PNGs.
 
 ## Known Limitations
 
 1. **D1 Transactions**: Not atomic - use `db.batch()` for critical multi-statement operations
 2. **FTS5 on D1**: Not supported - falls back to LIKE queries
 3. **Rate Limiting**: In-memory only, doesn't persist across Workers - use Cloudflare KV for production
-4. **Thumbnails on CF**: Uses Cloudflare Image Resizing URLs instead of Sharp
+4. **Thumbnails on CF**: Requires Image Transformations enabled in dashboard; falls back to original if disabled
 5. **Logging on CF**: Winston not available - uses simple console logger on Workers

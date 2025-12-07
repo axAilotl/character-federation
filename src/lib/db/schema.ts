@@ -7,6 +7,8 @@ export const users = sqliteTable('users', {
   username: text('username').unique().notNull(),
   displayName: text('display_name'),
   avatarUrl: text('avatar_url'),
+  bio: text('bio'), // v1.1: User bio/about section
+  profileCss: text('profile_css'), // v1.1: Custom CSS for profile page
   passwordHash: text('password_hash'),
   isAdmin: integer('is_admin').default(0),
   provider: text('provider'),
@@ -179,6 +181,30 @@ export const sessions = sqliteTable('sessions', {
   index('idx_sessions_user').on(table.userId),
 ]);
 
+// v1.1: Tag Preferences (follow/block tags per user)
+export const tagPreferences = sqliteTable('tag_preferences', {
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  tagId: integer('tag_id').notNull().references(() => tags.id, { onDelete: 'cascade' }),
+  preference: text('preference', { enum: ['follow', 'block'] }).notNull(),
+  createdAt: integer('created_at').default(0),
+}, (table) => [
+  primaryKey({ columns: [table.userId, table.tagId] }),
+  index('idx_tag_prefs_user').on(table.userId),
+  index('idx_tag_prefs_tag').on(table.tagId),
+  index('idx_tag_prefs_preference').on(table.preference),
+]);
+
+// v1.1: User Follows (social following system)
+export const userFollows = sqliteTable('user_follows', {
+  followerId: text('follower_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  followingId: text('following_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  createdAt: integer('created_at').default(0),
+}, (table) => [
+  primaryKey({ columns: [table.followerId, table.followingId] }),
+  index('idx_follows_follower').on(table.followerId),
+  index('idx_follows_following').on(table.followingId),
+]);
+
 // Type exports for inference
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
@@ -191,3 +217,7 @@ export type Vote = typeof votes.$inferSelect;
 export type Favorite = typeof favorites.$inferSelect;
 export type Comment = typeof comments.$inferSelect;
 export type Session = typeof sessions.$inferSelect;
+export type TagPreference = typeof tagPreferences.$inferSelect;
+export type NewTagPreference = typeof tagPreferences.$inferInsert;
+export type UserFollow = typeof userFollows.$inferSelect;
+export type NewUserFollow = typeof userFollows.$inferInsert;

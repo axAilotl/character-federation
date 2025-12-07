@@ -32,8 +32,10 @@ async function removeFtsIndexAsync(cardId: string): Promise<void> {
 
 /**
  * Get paginated list of cards with filtering
+ * @param filters - Filtering and pagination options
+ * @param userId - Optional user ID to include isFavorited status for each card
  */
-export async function getCards(filters: CardFilters = {}): Promise<PaginatedResponse<CardListItem>> {
+export async function getCards(filters: CardFilters = {}, userId?: string): Promise<PaginatedResponse<CardListItem>> {
   const db = await getDb();
   const {
     search,
@@ -176,6 +178,9 @@ export async function getCards(filters: CardFilters = {}): Promise<PaginatedResp
   const cardIds = rows.map(r => r.id);
   const tagsMap = await getTagsForCards(cardIds);
 
+  // Get favorites for authenticated user
+  const favoritesSet = userId ? await getFavoritesForCards(cardIds, userId) : new Set<string>();
+
   const items: CardListItem[] = rows.map(row => ({
     id: row.id,
     slug: row.slug,
@@ -192,12 +197,14 @@ export async function getCards(filters: CardFilters = {}): Promise<PaginatedResp
     tokensTotal: row.tokens_total,
     upvotes: row.upvotes,
     downvotes: row.downvotes,
+    score: row.upvotes - row.downvotes,
     favoritesCount: row.favorites_count,
     downloadsCount: row.downloads_count,
     commentsCount: row.comments_count,
     forksCount: row.forks_count,
     hasAlternateGreetings: row.has_alt_greetings === 1,
     alternateGreetingsCount: row.alt_greetings_count,
+    totalGreetingsCount: row.alt_greetings_count + 1,
     hasLorebook: row.has_lorebook === 1,
     lorebookEntriesCount: row.lorebook_entries_count,
     hasEmbeddedImages: row.has_embedded_images === 1,
@@ -211,6 +218,8 @@ export async function getCards(filters: CardFilters = {}): Promise<PaginatedResp
     } : null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    // User-specific: only set if userId was provided
+    ...(userId && { isFavorited: favoritesSet.has(row.id) }),
   }));
 
   return { items, total, page, limit, hasMore: offset + items.length < total };
@@ -265,9 +274,11 @@ export async function getCardBySlug(slug: string): Promise<CardDetail | null> {
     specVersion: row.spec_version, sourceFormat: (row.source_format || 'png') as CardDetail['sourceFormat'],
     hasAssets: row.has_assets === 1, assetsCount: row.assets_count || 0,
     imagePath: row.image_path, thumbnailPath: row.thumbnail_path, tokensTotal: row.tokens_total,
-    upvotes: row.upvotes, downvotes: row.downvotes, favoritesCount: row.favorites_count,
-    downloadsCount: row.downloads_count, commentsCount: row.comments_count, forksCount: row.forks_count,
+    upvotes: row.upvotes, downvotes: row.downvotes, score: row.upvotes - row.downvotes,
+    favoritesCount: row.favorites_count, downloadsCount: row.downloads_count,
+    commentsCount: row.comments_count, forksCount: row.forks_count,
     hasAlternateGreetings: row.has_alt_greetings === 1, alternateGreetingsCount: row.alt_greetings_count,
+    totalGreetingsCount: row.alt_greetings_count + 1,
     hasLorebook: row.has_lorebook === 1, lorebookEntriesCount: row.lorebook_entries_count,
     hasEmbeddedImages: row.has_embedded_images === 1, embeddedImagesCount: row.embedded_images_count,
     visibility: row.visibility, tags,
@@ -305,6 +316,24 @@ async function getTagsForCards(cardIds: string[]): Promise<Map<string, { id: num
     result.get(row.card_id)!.push({ id: row.id, name: row.name, slug: row.slug, category: row.category });
   }
   return result;
+}
+
+/**
+ * Get favorites for a list of card IDs for a specific user
+ * Returns a Set of card IDs that the user has favorited
+ */
+async function getFavoritesForCards(cardIds: string[], userId: string): Promise<Set<string>> {
+  if (cardIds.length === 0) return new Set();
+
+  const db = await getDb();
+  const placeholders = cardIds.map(() => '?').join(', ');
+
+  const rows = await db.prepare(`
+    SELECT card_id FROM favorites
+    WHERE user_id = ? AND card_id IN (${placeholders})
+  `).all<{ card_id: string }>(userId, ...cardIds);
+
+  return new Set(rows.map(r => r.card_id));
 }
 
 /**
@@ -361,6 +390,35 @@ export interface CreateCardInput {
     cardData: string;
     forkedFromVersionId?: string | null;
   };
+}
+
+/**
+ * Get all blocked tags (slugs)
+ * Returns a Set for O(1) lookups
+ */
+export async function getBlockedTags(): Promise<Set<string>> {
+  const db = await getDb();
+  const rows = await db.prepare(`
+    SELECT slug FROM tags WHERE is_blocked = 1
+  `).all<{ slug: string }>();
+  return new Set(rows.map(r => r.slug));
+}
+
+/**
+ * Check if any of the given tag slugs are blocked
+ * Returns the list of blocked tags if any are found, or empty array if none
+ */
+export async function checkBlockedTags(tagSlugs: string[]): Promise<string[]> {
+  if (tagSlugs.length === 0) return [];
+
+  const db = await getDb();
+  const placeholders = tagSlugs.map(() => '?').join(', ');
+  const rows = await db.prepare(`
+    SELECT name, slug FROM tags
+    WHERE slug IN (${placeholders}) AND is_blocked = 1
+  `).all<{ name: string; slug: string }>(...tagSlugs);
+
+  return rows.map(r => r.name);
 }
 
 /**

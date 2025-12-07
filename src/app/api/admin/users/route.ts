@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAsyncDb } from '@/lib/db/async-db';
+import { getDatabase } from '@/lib/db/async-db';
 import { getSession } from '@/lib/auth';
 import { parseQuery, AdminUsersFilterSchema } from '@/lib/validations';
 
@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
     if ('error' in parsed) return parsed.error;
     const { page, limit, search } = parsed.data;
 
-    const db = getAsyncDb();
+    const db = await getDatabase();
     const offset = (page - 1) * limit;
     const params: (string | number)[] = [];
     const conditions: string[] = [];

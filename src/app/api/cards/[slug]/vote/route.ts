@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAsyncDb } from '@/lib/db/async-db';
+import { getDatabase } from '@/lib/db/async-db';
 import { voteOnCard, getUserVote } from '@/lib/db/cards';
 import { getSession } from '@/lib/auth';
 import { parseBody, VoteSchema } from '@/lib/validations';
@@ -30,7 +30,7 @@ export async function POST(
     const { vote } = parsed.data;
 
     // Get card ID from slug
-    const db = getAsyncDb();
+    const db = await getDatabase();
     const card = await db.prepare('SELECT id FROM cards WHERE slug = ?').get<{ id: string }>(slug);
 
     if (!card) {
@@ -90,7 +90,7 @@ export async function DELETE(
     }
 
     // Get card ID from slug
-    const db = getAsyncDb();
+    const db = await getDatabase();
     const card = await db.prepare('SELECT id FROM cards WHERE slug = ?').get<{ id: string }>(slug);
 
     if (!card) {

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAsyncDb } from '@/lib/db/async-db';
+import { getDatabase } from '@/lib/db/async-db';
 import { toggleFavorite, isFavorited } from '@/lib/db/cards';
 import { getSession } from '@/lib/auth';
 
@@ -24,7 +24,7 @@ export async function POST(
     }
 
     // Get card ID from slug
-    const db = getAsyncDb();
+    const db = await getDatabase();
     const card = await db.prepare('SELECT id, favorites_count FROM cards WHERE slug = ?').get<{
       id: string;
       favorites_count: number;
@@ -76,12 +76,15 @@ export async function GET(
     const session = await getSession();
     if (!session) {
       return NextResponse.json({
-        isFavorited: false,
+        success: true,
+        data: {
+          isFavorited: false,
+        },
       });
     }
 
     // Get card ID from slug
-    const db = getAsyncDb();
+    const db = await getDatabase();
     const card = await db.prepare('SELECT id FROM cards WHERE slug = ?').get<{ id: string }>(slug);
 
     if (!card) {
@@ -94,7 +97,10 @@ export async function GET(
     const favorited = await isFavorited(session.user.id, card.id);
 
     return NextResponse.json({
-      isFavorited: favorited,
+      success: true,
+      data: {
+        isFavorited: favorited,
+      },
     });
   } catch (error) {
     console.error('Error checking favorite status:', error);

@@ -1,77 +1,98 @@
 # CardsHub
 
-A platform for sharing, discovering, and managing AI character cards (CCv2/CCv3 format). Built with Next.js 15 and deployable to Cloudflare Workers.
+A platform for sharing, discovering, and managing AI character cards. Supports CCv2, CCv3, CharX, and Voxta formats.
+
+**Live:** https://hub.axailotl.ai
 
 ## Features
 
-- **Character Card Support**: PNG, JSON, CharX (.charx), and Voxta (.voxpkg) formats
-- **Full-Text Search**: FTS5-powered search with BM25 ranking
-- **User Accounts**: Local auth + Discord OAuth
-- **Card Management**: Upload, vote, favorite, comment, report
-- **Admin Panel**: Moderation tools, user management, stats dashboard
-- **NSFW Filtering**: Visibility controls for content filtering
+- **Multi-format support** - PNG, JSON, CharX (.charx), Voxta (.voxpkg)
+- **Full-text search** - FTS5-powered search with BM25 ranking
+- **Tag system** - Auto-extracted from card data with include/exclude filtering
+- **User interactions** - Voting, favorites, comments, reporting
+- **Asset extraction** - Embedded images, audio, and custom assets from packages
+- **Admin panel** - Moderation, visibility controls, user management
+- **WebP thumbnails** - Cloudflare Image Transformations for optimized delivery
 
 ## Tech Stack
 
-- **Framework**: Next.js 15 (App Router)
-- **Database**: SQLite (better-sqlite3 local, Cloudflare D1 production)
-- **Storage**: Local filesystem or Cloudflare R2
-- **Styling**: Tailwind CSS v4
-- **Validation**: Zod schemas
-- **Auth**: bcryptjs + cookie sessions
+- **Framework:** Next.js 15 (App Router)
+- **Database:** SQLite (better-sqlite3 local, Cloudflare D1 production)
+- **Storage:** Local filesystem / Cloudflare R2
+- **Auth:** Cookie-based sessions with bcrypt
+- **Validation:** Zod schemas
+- **Testing:** Vitest (185 tests)
+- **Styling:** Tailwind CSS v4
 
-## Getting Started
+## Quick Start
 
 ```bash
 # Install dependencies
 npm install
 
-# Run development server
+# Initialize database
+npm run db:reset
+
+# Start dev server
 npm run dev
-
-# Run tests
-npm run test:run
-
-# Build for production
-npm run build
 ```
 
-## Cloudflare Deployment
+## Deployment
+
+### Cloudflare Workers
 
 ```bash
-# Create D1 database
-npx wrangler d1 create cardshub-db
-
-# Update wrangler.toml with database_id
-
-# Initialize schema
-npx wrangler d1 execute cardshub-db --remote --file=src/lib/db/schema.sql
-
-# Set secrets
-npx wrangler secret put DISCORD_CLIENT_ID
-npx wrangler secret put DISCORD_CLIENT_SECRET
-
-# Deploy
+# Build and deploy
 npm run cf:build && npm run cf:deploy
+
+# Create D1 database (first time)
+npm run cf:d1:create
+npm run cf:d1:migrate
+
+# Create R2 bucket (first time)
+npm run cf:r2:create
 ```
 
-## Environment Variables
+### Environment Variables
 
-```env
-# Database (local only)
-DATABASE_PATH=./cardshub.db
+```bash
+# Local development
+ALLOW_AUTO_ADMIN=true          # Enable admin bootstrap
+ADMIN_BOOTSTRAP_PASSWORD=xxx   # Bootstrap password
+DATABASE_PATH=./cardshub.db    # SQLite database path
 
-# Discord OAuth
-DISCORD_CLIENT_ID=your_client_id
-DISCORD_CLIENT_SECRET=your_client_secret
+# Production (Cloudflare secrets)
+DISCORD_CLIENT_ID=xxx          # Discord OAuth
+DISCORD_CLIENT_SECRET=xxx
 
-# App URL
+# Optional
 NEXT_PUBLIC_APP_URL=https://your-domain.com
-
-# Admin bootstrap (development only)
-ALLOW_AUTO_ADMIN=true
-ADMIN_BOOTSTRAP_PASSWORD=your_password
 ```
+
+## Scripts
+
+| Command | Description |
+|---------|-------------|
+| `npm run dev` | Development server |
+| `npm run build` | Production build |
+| `npm run test` | Run tests (watch) |
+| `npm run test:run` | Run tests (once) |
+| `npm run lint` | ESLint |
+| `npm run db:reset` | Reset database |
+| `npm run admin:reset-pw <user> <pass>` | Reset user password |
+| `npm run cf:deploy` | Deploy to Cloudflare |
+
+## API
+
+See [CLAUDE.md](./CLAUDE.md) for full API documentation.
+
+### Key Endpoints
+
+- `GET /api/cards` - List cards with filtering
+- `POST /api/cards` - Upload card (auth required)
+- `GET /api/cards/[slug]/download?format=png|json|original` - Download card
+- `GET /api/search?q=query` - Full-text search
+- `GET /api/tags` - List tags by category
 
 ## License
 

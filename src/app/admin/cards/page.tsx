@@ -144,6 +144,27 @@ export default function AdminCardsPage() {
     }
   };
 
+  const handleBulkDelete = async () => {
+    if (selected.size === 0) return;
+    if (!confirm(`⚠️ DELETE ${selected.size} cards? This CANNOT be undone!`)) return;
+    if (!confirm(`Are you ABSOLUTELY sure? Type count to confirm: ${selected.size} cards will be permanently deleted.`)) return;
+
+    try {
+      const res = await fetch('/api/admin/cards/bulk', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          cardIds: Array.from(selected),
+        }),
+      });
+      if (!res.ok) throw new Error('Failed to delete cards');
+      setSelected(new Set());
+      fetchCards();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to delete');
+    }
+  };
+
   const toggleSelect = (cardId: string) => {
     setSelected(prev => {
       const next = new Set(prev);
@@ -252,6 +273,13 @@ export default function AdminCardsPage() {
             >
               Block
             </button>
+            <span className="text-starlight/30">|</span>
+            <button
+              onClick={handleBulkDelete}
+              className="px-3 py-1 bg-red-600/30 hover:bg-red-600/50 text-red-300 rounded text-sm transition-colors font-bold border border-red-500/50"
+            >
+              DELETE SELECTED
+            </button>
           </div>
           <button
             onClick={() => setSelected(new Set())}
@@ -310,7 +338,7 @@ export default function AdminCardsPage() {
                         <div className="w-10 h-10 bg-deep-space rounded overflow-hidden flex-shrink-0">
                           {card.thumbnailPath ? (
                             <Image
-                              src={`/api/uploads/${card.thumbnailPath}`}
+                              src={card.thumbnailPath.startsWith('/') ? card.thumbnailPath : `/api/uploads/${card.thumbnailPath}`}
                               alt={card.name}
                               width={40}
                               height={40}

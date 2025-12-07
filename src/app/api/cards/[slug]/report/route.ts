@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAsyncDb } from '@/lib/db/async-db';
+import { getDatabase } from '@/lib/db/async-db';
 import { reportCard } from '@/lib/db/cards';
 import { getSession } from '@/lib/auth';
 import { parseBody, ReportSchema } from '@/lib/validations';
@@ -30,7 +30,7 @@ export async function POST(
     const { reason, details } = parsed.data;
 
     // Get card ID from slug
-    const db = getAsyncDb();
+    const db = await getDatabase();
     const card = await db.prepare('SELECT id FROM cards WHERE slug = ?').get<{ id: string }>(slug);
 
     if (!card) {

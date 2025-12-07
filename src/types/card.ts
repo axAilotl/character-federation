@@ -208,6 +208,8 @@ export interface CardListItem {
   // Stats
   upvotes: number;
   downvotes: number;
+  /** Score = upvotes - downvotes, calculated once in data layer */
+  score: number;
   favoritesCount: number;
   downloadsCount: number;
   commentsCount: number;
@@ -219,6 +221,8 @@ export interface CardListItem {
   // Metadata
   hasAlternateGreetings: boolean;
   alternateGreetingsCount: number;
+  /** Total greetings = first_mes (1) + alternate_greetings */
+  totalGreetingsCount: number;
   hasLorebook: boolean;
   lorebookEntriesCount: number;
   hasEmbeddedImages: boolean;

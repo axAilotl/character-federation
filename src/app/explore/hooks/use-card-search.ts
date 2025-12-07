@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import type { CardListItem, SortOption, PaginatedResponse, CardFilters } from '@/types/card';
+import { useSettings } from '@/lib/settings';
 
 interface TagGroup {
   category: string;
@@ -49,6 +50,7 @@ interface UseCardSearchReturn {
 export function useCardSearch(): UseCardSearchReturn {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { settings } = useSettings();
 
   // State
   const [cards, setCards] = useState<CardListItem[]>([]);
@@ -99,6 +101,12 @@ export function useCardSearch(): UseCardSearchReturn {
       .catch(console.error);
   }, []);
 
+  // Merge user-selected excludeTags with banned tags from settings
+  const allExcludeTags = useMemo(() => {
+    const merged = new Set([...excludeTags, ...(settings.bannedTags || [])]);
+    return Array.from(merged);
+  }, [excludeTags, settings.bannedTags]);
+
   // Fetch cards
   const fetchCards = useCallback(async (resetPage = true) => {
     setIsLoading(true);
@@ -109,7 +117,8 @@ export function useCardSearch(): UseCardSearchReturn {
     const params = new URLSearchParams();
     if (search) params.set('search', search);
     if (includeTags.length > 0) params.set('tags', includeTags.join(','));
-    if (excludeTags.length > 0) params.set('excludeTags', excludeTags.join(','));
+    // Use merged excludeTags (URL + banned from settings)
+    if (allExcludeTags.length > 0) params.set('excludeTags', allExcludeTags.join(','));
     params.set('sort', sort);
     params.set('page', currentPage.toString());
     params.set('limit', '24');
@@ -138,7 +147,7 @@ export function useCardSearch(): UseCardSearchReturn {
     } finally {
       setIsLoading(false);
     }
-  }, [search, includeTags, excludeTags, sort, page, minTokens, hasAltGreetings, hasLorebook, hasEmbeddedImages]);
+  }, [search, includeTags, allExcludeTags, sort, page, minTokens, hasAltGreetings, hasLorebook, hasEmbeddedImages]);
 
   // Update URL when filters change
   useEffect(() => {
@@ -156,10 +165,10 @@ export function useCardSearch(): UseCardSearchReturn {
     router.replace(newUrl, { scroll: false });
   }, [search, includeTags, excludeTags, sort, minTokens, hasAltGreetings, hasLorebook, hasEmbeddedImages, router]);
 
-  // Fetch cards when filters change
+  // Fetch cards when filters change (including banned tags from settings)
   useEffect(() => {
     fetchCards(true);
-  }, [includeTags, excludeTags, sort, hasAltGreetings, hasLorebook, hasEmbeddedImages]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [includeTags, allExcludeTags, sort, hasAltGreetings, hasLorebook, hasEmbeddedImages]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Debounced search
   useEffect(() => {

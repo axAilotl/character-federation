@@ -14,6 +14,8 @@ interface UserProfile {
   username: string;
   displayName: string | null;
   avatarUrl: string | null;
+  bio: string | null;
+  profileCss: string | null;
   isAdmin: boolean;
   createdAt: number;
   stats: {
@@ -22,6 +24,9 @@ interface UserProfile {
     totalUpvotes: number;
     favoritesCount: number;
   };
+  followersCount: number;
+  followingCount: number;
+  isFollowing: boolean;
 }
 
 type Tab = 'cards' | 'favorites';
@@ -41,8 +46,41 @@ export default function UserProfilePage() {
   const [hasMore, setHasMore] = useState(false);
   const [total, setTotal] = useState(0);
   const [selectedCard, setSelectedCard] = useState<CardListItem | null>(null);
+  const [isFollowing, setIsFollowing] = useState(false);
+  const [followersCount, setFollowersCount] = useState(0);
+  const [followLoading, setFollowLoading] = useState(false);
 
   const isOwnProfile = currentUser?.username === username;
+
+  // Update local follow state when profile loads
+  useEffect(() => {
+    if (profile) {
+      setIsFollowing(profile.isFollowing);
+      setFollowersCount(profile.followersCount);
+    }
+  }, [profile]);
+
+  const handleFollowToggle = async () => {
+    if (!currentUser || isOwnProfile) return;
+
+    setFollowLoading(true);
+    try {
+      const method = isFollowing ? 'DELETE' : 'POST';
+      const res = await fetch(`/api/users/${encodeURIComponent(username)}/follow`, {
+        method,
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setIsFollowing(data.isFollowing);
+        setFollowersCount(data.followersCount);
+      }
+    } catch (err) {
+      console.error('Error toggling follow:', err);
+    } finally {
+      setFollowLoading(false);
+    }
+  };
 
   // Fetch profile
   useEffect(() => {
@@ -153,7 +191,7 @@ export default function UserProfilePage() {
   }
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen profile-container">
       {/* Profile Header */}
       <div className="bg-cosmic-teal/30 border-b border-nebula/20">
         <div className="max-w-7xl mx-auto px-4 py-8">
@@ -190,8 +228,23 @@ export default function UserProfilePage() {
                 Joined {formatDate(profile.createdAt)}
               </p>
 
+              {/* Bio */}
+              {profile.bio && (
+                <p className="text-starlight/80 mt-3 max-w-xl whitespace-pre-wrap">
+                  {profile.bio}
+                </p>
+              )}
+
               {/* Stats */}
               <div className="flex items-center gap-6 mt-4">
+                <div className="text-center">
+                  <div className="text-xl font-bold text-starlight">{followersCount}</div>
+                  <div className="text-xs text-starlight/50">Followers</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-xl font-bold text-starlight">{profile.followingCount}</div>
+                  <div className="text-xs text-starlight/50">Following</div>
+                </div>
                 <div className="text-center">
                   <div className="text-xl font-bold text-starlight">{profile.stats.cardsCount}</div>
                   <div className="text-xs text-starlight/50">Cards</div>
@@ -204,25 +257,41 @@ export default function UserProfilePage() {
                   <div className="text-xl font-bold text-starlight">{profile.stats.totalUpvotes}</div>
                   <div className="text-xs text-starlight/50">Upvotes</div>
                 </div>
-                <div className="text-center">
-                  <div className="text-xl font-bold text-starlight">{profile.stats.favoritesCount}</div>
-                  <div className="text-xs text-starlight/50">Favorites</div>
-                </div>
               </div>
             </div>
 
             {/* Actions */}
-            {isOwnProfile && (
-              <Link
-                href="/settings"
-                className="px-4 py-2 bg-nebula/20 hover:bg-nebula/30 text-starlight rounded-lg transition-colors"
-              >
-                Edit Profile
-              </Link>
-            )}
+            <div className="flex flex-col gap-2">
+              {isOwnProfile ? (
+                <Link
+                  href="/settings"
+                  className="px-4 py-2 bg-nebula/20 hover:bg-nebula/30 text-starlight rounded-lg transition-colors text-center"
+                >
+                  Edit Profile
+                </Link>
+              ) : currentUser && (
+                <button
+                  onClick={handleFollowToggle}
+                  disabled={followLoading}
+                  className={cn(
+                    'px-4 py-2 rounded-lg transition-colors disabled:opacity-50',
+                    isFollowing
+                      ? 'bg-nebula/20 hover:bg-red-500/20 text-starlight hover:text-red-400'
+                      : 'bg-nebula hover:bg-nebula/80 text-white'
+                  )}
+                >
+                  {followLoading ? '...' : isFollowing ? 'Following' : 'Follow'}
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </div>
+
+      {/* Custom Profile CSS */}
+      {profile.profileCss && (
+        <style dangerouslySetInnerHTML={{ __html: profile.profileCss }} />
+      )}
 
       {/* Tabs */}
       <div className="border-b border-nebula/20">

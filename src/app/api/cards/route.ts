@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getCards, createCard, computeContentHash } from '@/lib/db/cards';
-import { parseFromBufferWithAssets } from '@/lib/card-parser';
+import { getCards, createCard, computeContentHash, checkBlockedTags } from '@/lib/db/cards';
+import { parseCard, type ParseResult, type ExtractedAsset } from '@character-foundry/loader';
+import { toUint8Array } from '@character-foundry/core';
+import { countCardTokens } from '@/lib/client/tokenizer';
 import { generateThumbnailBuffer } from '@/lib/image/thumbnail';
 import { saveAssets } from '@/lib/image';
 import { generateId, generateSlug } from '@/lib/utils';
@@ -11,12 +13,12 @@ import {
   parseQuery,
   CardFiltersSchema,
   CardFileSchema,
-  CardUploadMetadataSchema,
   UploadVisibilitySchema,
-  SUPPORTED_EXTENSIONS,
-  MAX_FILE_SIZE,
 } from '@/lib/validations';
 import type { CardFilters } from '@/types/card';
+
+// Use shared utility for counting embedded images
+import { countEmbeddedImages } from '@/lib/card-metadata';
 
 /**
  * Client-provided metadata structure
@@ -76,7 +78,11 @@ export async function GET(request: NextRequest) {
       includeNsfw: parsed.data.includeNsfw || false,
     };
 
-    const result = await getCards(filters);
+    // Get session to include isFavorited status for authenticated users
+    const session = await getSession();
+    const userId = session?.user?.id;
+
+    const result = await getCards(filters, userId);
 
     return NextResponse.json(result, {
       headers: {
@@ -181,6 +187,44 @@ export async function POST(request: NextRequest) {
     let mainImage: Buffer | undefined;
     let extractedAssets: Array<{ name: string; type: string; ext: string; buffer: Buffer; path?: string }> = [];
 
+    // Parse card using character-foundry loader
+    const parseResult = parseCard(toUint8Array(buffer), { extractAssets: true });
+    const cardData = parseResult.card.data;
+
+    // Find main image from assets - prefer small embedded icons over huge PNG containers
+    // For PNGs with embedded assets, look for iconx or similar small icon first
+    const smallIcon = parseResult.assets.find(a =>
+      a.type === 'icon' &&
+      !a.isMain &&
+      a.data &&
+      a.data.length < 5 * 1024 * 1024 // Under 5MB
+    );
+
+    if (smallIcon?.data) {
+      // Use small embedded icon (e.g., iconx at ~30-50KB)
+      mainImage = Buffer.from(smallIcon.data as Uint8Array);
+    } else if (parseResult.containerFormat === 'png') {
+      // Fallback to raw PNG if no small icon found
+      mainImage = Buffer.from(parseResult.rawBuffer as Uint8Array);
+    } else {
+      // For non-PNG formats, use main icon asset
+      const mainAsset = parseResult.assets.find(a => a.isMain && a.type === 'icon');
+      if (mainAsset?.data) {
+        mainImage = Buffer.from(mainAsset.data as Uint8Array);
+      }
+    }
+
+    // Convert non-main assets to our format
+    extractedAssets = parseResult.assets
+      .filter(a => !a.isMain || a.type !== 'icon')
+      .map(a => ({
+        name: a.name,
+        type: a.type,
+        ext: a.ext,
+        buffer: Buffer.from(a.data as Uint8Array),
+        path: a.path,
+      }));
+
     if (clientMetadata) {
       // Use client-parsed metadata (reduces server CPU usage)
       parsedCard = {
@@ -195,31 +239,41 @@ export async function POST(request: NextRequest) {
         tags: clientMetadata.tags,
         raw: JSON.parse(clientMetadata.cardData),
       };
-
-      // Still need to extract image/assets from the file for storage
-      // Do minimal parsing just for binary data
-      const parseResult = parseFromBufferWithAssets(buffer, file.name);
-      mainImage = parseResult.mainImage;
-      extractedAssets = parseResult.extractedAssets;
     } else {
       // Full server-side parsing (fallback for clients without JS)
-      const parseResult = parseFromBufferWithAssets(buffer, file.name);
-      const card = parseResult.card;
+      const tokens = countCardTokens(cardData);
+
+      // Count embedded images
+      const embeddedImages = countEmbeddedImages([
+        cardData.description,
+        cardData.first_mes,
+        ...(cardData.alternate_greetings || []),
+        cardData.mes_example,
+        cardData.creator_notes || '',
+      ]);
+
+      // Map container format to source format
+      const sourceFormat = parseResult.containerFormat === 'unknown' ? 'json' : parseResult.containerFormat;
 
       parsedCard = {
-        name: card.name,
-        description: card.description,
-        creator: card.creator,
-        creatorNotes: card.creatorNotes,
-        specVersion: card.specVersion,
-        sourceFormat: card.sourceFormat,
-        tokens: card.tokens,
-        metadata: card.metadata,
-        tags: card.tags,
-        raw: card.raw,
+        name: cardData.name || 'Unknown',
+        description: cardData.description || '',
+        creator: cardData.creator || '',
+        creatorNotes: cardData.creator_notes || '',
+        specVersion: parseResult.spec === 'v3' ? 'v3' : 'v2',
+        sourceFormat: sourceFormat as 'png' | 'json' | 'charx' | 'voxta',
+        tokens,
+        metadata: {
+          hasAlternateGreetings: (cardData.alternate_greetings?.length || 0) > 0,
+          alternateGreetingsCount: cardData.alternate_greetings?.length || 0,
+          hasLorebook: !!(cardData.character_book?.entries?.length),
+          lorebookEntriesCount: cardData.character_book?.entries?.length || 0,
+          hasEmbeddedImages: embeddedImages > 0,
+          embeddedImagesCount: embeddedImages,
+        },
+        tags: cardData.tags || [],
+        raw: parseResult.card,
       };
-      mainImage = parseResult.mainImage;
-      extractedAssets = parseResult.extractedAssets;
     }
 
     // Generate IDs
@@ -257,27 +311,35 @@ export async function POST(request: NextRequest) {
 
       // Generate thumbnail
       if (isCloudflareRuntime()) {
-        // On Cloudflare, use CF Image Resizing URL format
-        // Assumption: The frontend or proxy handles the /cdn-cgi/image/ construction
-        // OR we return the configured URL here.
-        // Using format: /cdn-cgi/image/width=500,format=webp/URL
-        // Since we have the imagePath (which is a public URL), we can prefix it.
-        thumbnailPath = `/cdn-cgi/image/width=500,format=webp${imagePath}`;
-        // Dimensions are approximate or unknown until resized
-        thumbnailWidth = 500;
-        thumbnailHeight = imageWidth && imageHeight ? Math.round((imageHeight * 500) / imageWidth) : 500;
+        // On Cloudflare: Use /api/thumb/ route which applies cf.image transformations
+        thumbnailPath = `/api/thumb/${imageName}?type=main`;
+        // Estimate thumbnail dimensions (500px portrait width)
+        const isLandscape = imageWidth && imageHeight && imageWidth > imageHeight;
+        thumbnailWidth = isLandscape ? 750 : 500;
+        thumbnailHeight = isLandscape
+          ? Math.round((imageHeight! * 750) / imageWidth!)
+          : Math.round((imageHeight! * 500) / imageWidth!);
       } else {
-        // Local: Generate thumbnail buffer
+        // On Node.js: Generate and store WebP thumbnail with Sharp
         try {
           const thumbResult = await generateThumbnailBuffer(mainImage, 'main');
           const thumbName = `thumbnails/${id}.webp`;
           await store(thumbResult.buffer, thumbName);
-          
+
           thumbnailPath = getPublicUrl(`file:///${thumbName}`);
           thumbnailWidth = thumbResult.width;
           thumbnailHeight = thumbResult.height;
         } catch (error) {
           console.error('Failed to generate thumbnail:', error);
+          // Fallback to /api/thumb/ route
+          thumbnailPath = `/api/thumb/${imageName}?type=main`;
+          const isLandscape = imageWidth && imageHeight && imageWidth > imageHeight;
+          thumbnailWidth = isLandscape ? 750 : 500;
+          thumbnailHeight = isLandscape && imageWidth && imageHeight
+            ? Math.round((imageHeight * 750) / imageWidth)
+            : imageWidth && imageHeight
+              ? Math.round((imageHeight * 500) / imageWidth)
+              : 750;
         }
       }
     }
@@ -303,6 +365,23 @@ export async function POST(request: NextRequest) {
     // Use the card's actual tags + any user-provided tags
     // Tags will be created in the database if they don't exist
     const allTags = [...new Set([...parsedCard.tags, ...tagSlugs])];
+
+    // Normalize tags to slugs for blocked tag check
+    const allTagSlugs = allTags.map(tag =>
+      tag.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+    );
+
+    // Check for blocked tags
+    const blockedTagNames = await checkBlockedTags(allTagSlugs);
+    if (blockedTagNames.length > 0) {
+      return NextResponse.json(
+        {
+          error: `Upload rejected: Card contains blocked tags: ${blockedTagNames.join(', ')}`,
+          blockedTags: blockedTagNames,
+        },
+        { status: 400 }
+      );
+    }
 
     // Determine actual assets count (from extracted assets, not just card data)
     const actualAssetsCount = savedAssetsData.length || extractedAssets.length;

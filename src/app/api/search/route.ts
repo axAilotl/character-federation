@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAsyncDb } from '@/lib/db/async-db';
+import { getDatabase } from '@/lib/db/async-db';
 import { parseQuery, SearchQuerySchema } from '@/lib/validations';
 
 interface SearchResult {
@@ -36,7 +36,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    const db = getAsyncDb();
+    const db = await getDatabase();
 
     // Build FTS5 query with prefix matching
     const searchTerm = query.trim();

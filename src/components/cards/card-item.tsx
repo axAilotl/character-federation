@@ -8,6 +8,7 @@ import type { CardListItem, SourceFormat } from '@/types/card';
 import { useSettings } from '@/lib/settings';
 import { useAuth } from '@/lib/auth/context';
 import { cn } from '@/lib/utils/cn';
+import { formatCount } from '@/lib/utils/format';
 
 // Format badge component - matches the style of other top row badges
 function FormatBadge({ format, specVersion }: { format: SourceFormat; specVersion: string }) {
@@ -31,8 +32,8 @@ interface CardItemProps {
 export function CardItem({ card, onQuickView }: CardItemProps) {
   const { settings } = useSettings();
   const { user } = useAuth();
-  const score = card.upvotes - card.downvotes;
-  const [isFavorited, setIsFavorited] = useState(false);
+  // Initialize from card data (API returns isFavorited for authenticated users)
+  const [isFavorited, setIsFavorited] = useState(card.isFavorited ?? false);
   const [favoritesCount, setFavoritesCount] = useState(card.favoritesCount);
   const [isTogglingFavorite, setIsTogglingFavorite] = useState(false);
 
@@ -115,11 +116,11 @@ export function CardItem({ card, onQuickView }: CardItemProps) {
         {/* Metadata icons - top left */}
         <div className="absolute top-2 left-2 flex flex-wrap gap-1">
           {card.hasAlternateGreetings && card.alternateGreetingsCount > 0 && (
-            <div className="flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-black/60 text-xs text-starlight/80">
+            <div className="flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-black/60 text-xs text-starlight/80" title="Total greetings (first + alternates)">
               <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
               </svg>
-              <span>{card.alternateGreetingsCount}</span>
+              <span>{card.totalGreetingsCount}</span>
             </div>
           )}
           {card.hasLorebook && (
@@ -131,11 +132,19 @@ export function CardItem({ card, onQuickView }: CardItemProps) {
             </div>
           )}
           {card.hasEmbeddedImages && card.embeddedImagesCount > 0 && (
-            <div className="flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-black/60 text-xs text-starlight/80">
+            <div className="flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-black/60 text-xs text-starlight/80" title="Embedded images (links)">
               <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
               </svg>
               <span>{card.embeddedImagesCount}</span>
+            </div>
+          )}
+          {card.hasAssets && card.assetsCount > 0 && (
+            <div className="flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-black/60 text-xs text-starlight/80" title="Embedded assets (files)">
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 19a2 2 0 01-2-2V7a2 2 0 012-2h4l2 2h4a2 2 0 012 2v1M5 19h14a2 2 0 002-2v-5a2 2 0 00-2-2H9a2 2 0 00-2 2v5a2 2 0 01-2 2z" />
+              </svg>
+              <span>{card.assetsCount}</span>
             </div>
           )}
         </div>
@@ -163,14 +172,13 @@ export function CardItem({ card, onQuickView }: CardItemProps) {
                 by {card.creator}
               </Link>
             )}
-            {card.creator && card.uploader && ' • '}
-            {card.uploader && (
+            {!card.creator && card.uploader && (
               <Link
                 href={`/user/${card.uploader.username}`}
                 onClick={handleCreatorClick}
                 className="hover:text-nebula transition-colors"
               >
-                @{card.uploader.username}
+                by @{card.uploader.username}
               </Link>
             )}
           </div>
@@ -201,8 +209,8 @@ export function CardItem({ card, onQuickView }: CardItemProps) {
         <div className="flex items-center gap-2.5">
           {/* Votes */}
           <div className="flex items-center gap-1">
-            <span className={score >= 0 ? 'text-aurora' : 'text-red-400'}>
-              {score >= 0 ? '+' : ''}{score}
+            <span className={card.score >= 0 ? 'text-aurora' : 'text-red-400'}>
+              {card.score >= 0 ? '+' : ''}{card.score}
             </span>
           </div>
 
@@ -249,12 +257,3 @@ export function CardItem({ card, onQuickView }: CardItemProps) {
   );
 }
 
-function formatCount(count: number): string {
-  if (count >= 1000000) {
-    return `${(count / 1000000).toFixed(1)}M`;
-  }
-  if (count >= 1000) {
-    return `${(count / 1000).toFixed(1)}K`;
-  }
-  return count.toString();
-}

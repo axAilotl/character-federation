@@ -26,6 +26,5 @@ next-env.d.ts
 .vercel
 .wrangler
 
-# plan files
-PLAN.md
+# build output
 .open-next/

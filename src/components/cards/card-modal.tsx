@@ -7,6 +7,7 @@ import { Modal, ModalBody, Button, Badge } from '@/components/ui';
 import type { CardListItem, SourceFormat } from '@/types/card';
 import { useAuth } from '@/lib/auth/context';
 import { cn } from '@/lib/utils/cn';
+import { formatDate, stripHtml } from '@/lib/utils/format';
 
 // Format badge component
 function FormatBadge({ format, specVersion, className }: { format: SourceFormat; specVersion: string; className?: string }) {
@@ -37,18 +38,6 @@ interface CardModalProps {
   onClose: () => void;
 }
 
-function stripHtml(html: string): string {
-  return html.replace(/<[^>]*>/g, '').trim();
-}
-
-function formatDate(timestamp: number): string {
-  return new Date(timestamp * 1000).toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  });
-}
-
 export function CardModal({ card, isOpen, onClose }: CardModalProps) {
   const { user } = useAuth();
   const [isFavorited, setIsFavorited] = useState(false);
@@ -58,8 +47,12 @@ export function CardModal({ card, isOpen, onClose }: CardModalProps) {
   useEffect(() => {
     if (card) {
       setFavoritesCount(card.favoritesCount);
-      setIsFavorited(false);
-      if (user) {
+      // Use isFavorited from card data (API returns it for authenticated users)
+      // Only fetch if not present (fallback for older cached data)
+      if (card.isFavorited !== undefined) {
+        setIsFavorited(card.isFavorited);
+      } else if (user) {
+        setIsFavorited(false);
         fetch(`/api/cards/${card.slug}/favorite`)
           .then(res => res.json())
           .then(data => {
@@ -68,13 +61,13 @@ export function CardModal({ card, isOpen, onClose }: CardModalProps) {
             }
           })
           .catch(() => {});
+      } else {
+        setIsFavorited(false);
       }
     }
   }, [card, user]);
 
   if (!card) return null;
-
-  const score = card.upvotes - card.downvotes;
 
   const handleFavoriteClick = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -174,8 +167,8 @@ export function CardModal({ card, isOpen, onClose }: CardModalProps) {
                 <svg className="w-5 h-5 text-starlight/50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 10h4.764a2 2 0 011.789 2.894l-3.5 7A2 2 0 0115.263 21h-4.017c-.163 0-.326-.02-.485-.06L7 20m7-10V5a2 2 0 00-2-2h-.095c-.5 0-.905.405-.905.905 0 .714-.211 1.412-.608 2.006L7 11v9m7-10h-2M7 20H5a2 2 0 01-2-2v-6a2 2 0 012-2h2.5" />
                 </svg>
-                <span className={`font-bold ${score >= 0 ? 'text-aurora' : 'text-red-400'}`}>
-                  {score >= 0 ? '+' : ''}{score}
+                <span className={`font-bold ${card.score >= 0 ? 'text-aurora' : 'text-red-400'}`}>
+                  {card.score >= 0 ? '+' : ''}{card.score}
                 </span>
               </div>
 
@@ -250,7 +243,7 @@ export function CardModal({ card, isOpen, onClose }: CardModalProps) {
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
                   </svg>
-                  {card.alternateGreetingsCount} Greeting{card.alternateGreetingsCount !== 1 ? 's' : ''}
+                  {card.totalGreetingsCount} Greetings
                 </Badge>
               )}
               {card.hasLorebook && (

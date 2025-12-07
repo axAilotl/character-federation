@@ -1,10 +1,41 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { readFileSync, existsSync } from 'fs';
-import { join } from 'path';
 import { getCardBySlug, incrementDownloads, getCardVersionById } from '@/lib/db/cards';
+import { isCloudflareRuntime } from '@/lib/db';
+import { getR2 } from '@/lib/cloudflare/env';
+import { embedIntoPNG } from '@character-foundry/png';
+import { toUint8Array } from '@character-foundry/core';
+import type { CCv2Data, CCv3Data } from '@character-foundry/schemas';
 
 interface RouteParams {
   params: Promise<{ slug: string }>;
+}
+
+/**
+ * Get file from storage (R2 or local filesystem)
+ */
+async function getFileFromStorage(storagePath: string): Promise<Buffer | null> {
+  if (isCloudflareRuntime()) {
+    const r2 = await getR2();
+    if (!r2) return null;
+
+    // storagePath might be like "cards/abc123.png" or "file:///cards/abc123.png" or "r2://cards/abc123.png"
+    const key = storagePath.replace(/^(file:\/\/\/|r2:\/\/)/, '');
+    const object = await r2.get(key);
+    if (!object) return null;
+
+    const arrayBuffer = await object.arrayBuffer();
+    return Buffer.from(arrayBuffer);
+  }
+
+  // Local filesystem
+  const { readFileSync, existsSync } = await import('fs');
+  const { join } = await import('path');
+
+  const cleanPath = storagePath.replace(/^file:\/\/\//, '');
+  const fullPath = join(process.cwd(), 'uploads', cleanPath);
+
+  if (!existsSync(fullPath)) return null;
+  return readFileSync(fullPath);
 }
 
 export async function GET(request: NextRequest, { params }: RouteParams) {
@@ -24,6 +55,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const version = card.versionId ? await getCardVersionById(card.versionId) : null;
     await incrementDownloads(card.id);
 
+    // JSON download - just return the card data
     if (format === 'json') {
       return new NextResponse(JSON.stringify(card.cardData, null, 2), {
         headers: {
@@ -33,33 +65,64 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       });
     }
 
-    if (version?.storage_url) {
-      const storagePath = version.storage_url.replace(/^file:\/\/\//, '');
-      const fullStoragePath = join(process.cwd(), 'uploads', storagePath);
-
-      if (existsSync(fullStoragePath)) {
-        const fileBuffer = readFileSync(fullStoragePath);
-        const ext = storagePath.split('.').pop()?.toLowerCase() || 'png';
-        const contentType = ext === 'json' ? 'application/json' : 'image/png';
-        const downloadExt = ext === 'json' ? 'json' : 'png';
-
-        return new NextResponse(fileBuffer, {
+    // Original format download - return the stored file as-is
+    if (format === 'original' && version?.storage_url) {
+      const fileBuffer = await getFileFromStorage(version.storage_url);
+      if (fileBuffer) {
+        const ext = version.storage_url.split('.').pop()?.toLowerCase() || 'bin';
+        const mimeTypes: Record<string, string> = {
+          'png': 'image/png',
+          'charx': 'application/octet-stream',
+          'voxpkg': 'application/octet-stream',
+          'json': 'application/json',
+        };
+        return new NextResponse(new Uint8Array(fileBuffer), {
           headers: {
-            'Content-Type': contentType,
-            'Content-Disposition': `attachment; filename="${card.slug}.${downloadExt}"`,
+            'Content-Type': mimeTypes[ext] || 'application/octet-stream',
+            'Content-Disposition': `attachment; filename="${card.slug}.${ext}"`,
           },
         });
       }
     }
 
+    // PNG download - try to get stored file first
+    if (version?.storage_url) {
+      const fileBuffer = await getFileFromStorage(version.storage_url);
+
+      if (fileBuffer) {
+        const ext = version.storage_url.split('.').pop()?.toLowerCase() || 'png';
+
+        // If the stored file is already a PNG, return it as-is
+        // (it should already have the character data embedded)
+        if (ext === 'png') {
+          return new NextResponse(new Uint8Array(fileBuffer), {
+            headers: {
+              'Content-Type': 'image/png',
+              'Content-Disposition': `attachment; filename="${card.slug}.png"`,
+            },
+          });
+        }
+      }
+    }
+
+    // If we have an image, embed the card data into it and return as PNG
     if (card.imagePath) {
-      const relativePath = card.imagePath.replace(/^\/?(uploads\/)?/, '');
-      const fullPath = join(process.cwd(), 'uploads', relativePath);
+      // imagePath is like "/api/uploads/abc123.png" - extract the key
+      const imageKey = card.imagePath.replace(/^\/api\/uploads\//, '');
+      const imageBuffer = await getFileFromStorage(imageKey);
 
-      if (existsSync(fullPath)) {
-        const imageBuffer = readFileSync(fullPath);
+      if (imageBuffer) {
+        // Embed the card data into the PNG
+        // Type assertion needed: CharacterCard and CCv2Data/CCv3Data are structurally identical
+        const embeddedPng = embedIntoPNG(
+          toUint8Array(imageBuffer),
+          card.cardData as CCv2Data | CCv3Data,
+          { key: 'chara', base64: true, minify: true }
+        );
 
-        return new NextResponse(imageBuffer, {
+        // Convert to Uint8Array for NextResponse (BinaryData type assertion needed)
+        const pngBytes = new Uint8Array(embeddedPng as Uint8Array);
+        return new NextResponse(pngBytes, {
           headers: {
             'Content-Type': 'image/png',
             'Content-Disposition': `attachment; filename="${card.slug}.png"`,
@@ -68,6 +131,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       }
     }
 
+    // Fallback: return JSON if no image available
     return new NextResponse(JSON.stringify(card.cardData, null, 2), {
       headers: {
         'Content-Type': 'application/json',

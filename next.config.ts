@@ -21,19 +21,21 @@ const nextConfig: NextConfig = {
     ];
   },
 
-  ...(process.env.CLOUDFLARE_PAGES === 'true' ? {
-    webpack: (config, { isServer }) => {
-      if (isServer) {
-        config.externals = config.externals || [];
-        if (Array.isArray(config.externals)) {
-          config.externals.push('better-sqlite3', 'sharp');
-        }
+  webpack: (config, { isServer }) => {
+    // Exclude native modules on Cloudflare Workers
+    if (process.env.CLOUDFLARE_PAGES === 'true' && isServer) {
+      config.externals = config.externals || [];
+      if (Array.isArray(config.externals)) {
+        config.externals.push('better-sqlite3', 'sharp');
       }
-      return config;
-    },
-  } : {
+    }
+
+    return config;
+  },
+
+  ...(process.env.CLOUDFLARE_PAGES !== 'true' ? {
     serverExternalPackages: ['better-sqlite3', 'tiktoken'],
-  }),
+  } : {}),
 };
 
 export default nextConfig;

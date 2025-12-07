@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getAsyncDb } from '@/lib/db/async-db';
+import { getDatabase } from '@/lib/db/async-db';
 import { getSession } from '@/lib/auth';
 
 /**
@@ -17,7 +17,7 @@ export async function GET() {
       );
     }
 
-    const db = getAsyncDb();
+    const db = await getDatabase();
 
     // Total cards
     const totalCardsResult = await db.prepare('SELECT COUNT(*) as count FROM cards').get<{ count: number }>();

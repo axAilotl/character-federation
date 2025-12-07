@@ -8,6 +8,8 @@ CREATE TABLE IF NOT EXISTS users (
   username TEXT UNIQUE NOT NULL,
   display_name TEXT,
   avatar_url TEXT,
+  bio TEXT, -- v1.1: User bio/about section
+  profile_css TEXT, -- v1.1: Custom CSS for profile page
   password_hash TEXT,
   is_admin INTEGER DEFAULT 0,
   provider TEXT, -- 'email', 'google', 'discord', 'github'
@@ -121,7 +123,8 @@ CREATE TABLE IF NOT EXISTS tags (
   name TEXT UNIQUE NOT NULL,
   slug TEXT UNIQUE NOT NULL,
   category TEXT, -- 'genre', 'pov', 'rating', 'theme', etc.
-  usage_count INTEGER DEFAULT 0
+  usage_count INTEGER DEFAULT 0,
+  is_blocked INTEGER DEFAULT 0 -- If 1, cards with this tag cannot be uploaded
 );
 
 -- Card Tags (many-to-many)
@@ -177,6 +180,23 @@ CREATE TABLE IF NOT EXISTS sessions (
   created_at INTEGER DEFAULT (unixepoch())
 );
 
+-- v1.1: Tag Preferences (follow/block tags per user)
+CREATE TABLE IF NOT EXISTS tag_preferences (
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  tag_id INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+  preference TEXT NOT NULL CHECK (preference IN ('follow', 'block')),
+  created_at INTEGER DEFAULT (unixepoch()),
+  PRIMARY KEY (user_id, tag_id)
+);
+
+-- v1.1: User Follows (social following system)
+CREATE TABLE IF NOT EXISTS user_follows (
+  follower_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  following_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at INTEGER DEFAULT (unixepoch()),
+  PRIMARY KEY (follower_id, following_id)
+);
+
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_cards_created_at ON cards(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_cards_downloads ON cards(downloads_count DESC);
@@ -217,6 +237,15 @@ CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_tags_category ON tags(category);
 CREATE INDEX IF NOT EXISTS idx_reports_status ON reports(status);
 CREATE INDEX IF NOT EXISTS idx_reports_card ON reports(card_id);
+
+-- v1.1: Tag Preferences indexes
+CREATE INDEX IF NOT EXISTS idx_tag_prefs_user ON tag_preferences(user_id);
+CREATE INDEX IF NOT EXISTS idx_tag_prefs_tag ON tag_preferences(tag_id);
+CREATE INDEX IF NOT EXISTS idx_tag_prefs_preference ON tag_preferences(preference);
+
+-- v1.1: User Follows indexes
+CREATE INDEX IF NOT EXISTS idx_follows_follower ON user_follows(follower_id);
+CREATE INDEX IF NOT EXISTS idx_follows_following ON user_follows(following_id);
 
 -- Full-text search index (FTS5)
 -- Indexes card name, description, creator, and creator_notes for fast search

@@ -10,6 +10,9 @@ export interface UserSettings {
 
   // Card display
   cardSize: 'normal' | 'large';
+
+  // Content filtering
+  bannedTags: string[];  // Tag slugs to exclude from explore results
 }
 
 const defaultSettings: UserSettings = {
@@ -17,6 +20,7 @@ const defaultSettings: UserSettings = {
   blurNsfwContent: true,
   sidebarExpanded: false,
   cardSize: 'large',
+  bannedTags: [],
 };
 
 interface SettingsContextType {

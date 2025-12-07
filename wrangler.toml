@@ -20,6 +20,10 @@ database_id = "b81d49dc-a3e8-4be2-9fbe-835e4046deaf"
 binding = "R2"
 bucket_name = "cardshub-uploads"
 
+# Images binding for transformations
+[images]
+binding = "IMAGES"
+
 # Environment variables (set via dashboard or wrangler secret)
 # DISCORD_CLIENT_ID
 # DISCORD_CLIENT_SECRET

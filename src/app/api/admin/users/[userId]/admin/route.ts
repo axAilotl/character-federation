@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAsyncDb } from '@/lib/db/async-db';
+import { getDatabase } from '@/lib/db/async-db';
 import { getSession } from '@/lib/auth';
 import { parseBody, ToggleAdminSchema } from '@/lib/validations';
 
@@ -36,7 +36,7 @@ export async function PUT(
     if ('error' in parsed) return parsed.error;
     const { isAdmin } = parsed.data;
 
-    const db = getAsyncDb();
+    const db = await getDatabase();
     await db.prepare('UPDATE users SET is_admin = ? WHERE id = ?').run(isAdmin ? 1 : 0, userId);
 
     return NextResponse.json({ success: true });

@@ -17,12 +17,16 @@ interface ParseState {
   error?: string;
 }
 
+type UploadStage = 'preparing' | 'uploading' | 'processing' | null;
+
 export default function UploadPage() {
   const router = useRouter();
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<number>(0);
+  const [uploadStage, setUploadStage] = useState<UploadStage>(null);
   const [error, setError] = useState<string | null>(null);
   const [parseState, setParseState] = useState<ParseState>({ status: 'idle' });
 
@@ -121,6 +125,8 @@ export default function UploadPage() {
     if (!file || parseState.status !== 'parsed' || !parseState.result) return;
 
     setIsUploading(true);
+    setUploadProgress(0);
+    setUploadStage('preparing');
     setError(null);
 
     try {
@@ -152,21 +158,61 @@ export default function UploadPage() {
       formData.append('metadata', JSON.stringify(metadata));
       formData.append('tags', JSON.stringify(card.tags));
 
-      const response = await fetch('/api/cards', {
-        method: 'POST',
-        body: formData,
+      // Use XMLHttpRequest for upload progress tracking
+      setUploadStage('uploading');
+
+      const result = await new Promise<{ data: { slug: string } }>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+
+        xhr.upload.addEventListener('progress', (e) => {
+          if (e.lengthComputable) {
+            const percent = Math.round((e.loaded / e.total) * 100);
+            setUploadProgress(percent);
+          }
+        });
+
+        xhr.upload.addEventListener('load', () => {
+          // Upload complete, now server is processing
+          setUploadStage('processing');
+          setUploadProgress(100);
+        });
+
+        xhr.addEventListener('load', () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            try {
+              const response = JSON.parse(xhr.responseText);
+              resolve(response);
+            } catch {
+              reject(new Error('Invalid server response'));
+            }
+          } else {
+            try {
+              const response = JSON.parse(xhr.responseText);
+              reject(new Error(response.error || 'Upload failed'));
+            } catch {
+              reject(new Error(`Upload failed (${xhr.status})`));
+            }
+          }
+        });
+
+        xhr.addEventListener('error', () => {
+          reject(new Error('Network error during upload'));
+        });
+
+        xhr.addEventListener('abort', () => {
+          reject(new Error('Upload cancelled'));
+        });
+
+        xhr.open('POST', '/api/cards');
+        xhr.send(formData);
       });
-
-      const result = await response.json();
-
-      if (!response.ok) {
-        throw new Error(result.error || 'Upload failed');
-      }
 
       // Redirect to the new card page
       router.push(`/card/${result.data.slug}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Upload failed');
+      setUploadStage(null);
+      setUploadProgress(0);
     } finally {
       setIsUploading(false);
     }
@@ -357,27 +403,68 @@ export default function UploadPage() {
           </div>
         )}
 
-        {/* Upload button */}
+        {/* Upload button and progress */}
         {file && parseState.status === 'parsed' && (
-          <div className="mt-6 flex gap-4">
-            <Button
-              variant="primary"
-              size="lg"
-              className="flex-1"
-              onClick={handleUpload}
-              isLoading={isUploading}
-              disabled={isUploading}
-            >
-              Upload Card
-            </Button>
-            <Button
-              variant="secondary"
-              size="lg"
-              onClick={clearFile}
-              disabled={isUploading}
-            >
-              Cancel
-            </Button>
+          <div className="mt-6 space-y-4">
+            {/* Progress indicator during upload */}
+            {isUploading && (
+              <div className="space-y-2">
+                {/* Stage indicator */}
+                <div className="flex items-center justify-center gap-2 text-sm">
+                  <svg className="w-4 h-4 animate-spin text-aurora" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                  <span className="text-starlight/80">
+                    {uploadStage === 'preparing' && 'Preparing upload...'}
+                    {uploadStage === 'uploading' && `Uploading file... ${uploadProgress}%`}
+                    {uploadStage === 'processing' && 'Processing card & assets...'}
+                  </span>
+                </div>
+
+                {/* Progress bar */}
+                <div className="w-full h-2 bg-deep-space rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-nebula to-aurora transition-all duration-300 ease-out"
+                    style={{
+                      width: uploadStage === 'processing' ? '100%' : `${uploadProgress}%`,
+                    }}
+                  />
+                </div>
+
+                {/* Processing indicator - pulsing bar when server is processing */}
+                {uploadStage === 'processing' && (
+                  <div className="text-xs text-starlight/50 text-center">
+                    Server is processing thumbnails and assets...
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Buttons */}
+            <div className="flex gap-4">
+              <Button
+                variant="primary"
+                size="lg"
+                className="flex-1"
+                onClick={handleUpload}
+                disabled={isUploading}
+              >
+                {isUploading ? (
+                  uploadStage === 'processing' ? 'Processing...' : 'Uploading...'
+                ) : (
+                  'Upload Card'
+                )}
+              </Button>
+              <Button
+                variant="secondary"
+                size="lg"
+                onClick={clearFile}
+                disabled={isUploading}
+              >
+                Cancel
+              </Button>
+            </div>
           </div>
         )}
 

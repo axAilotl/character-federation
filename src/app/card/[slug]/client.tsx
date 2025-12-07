@@ -87,14 +87,26 @@ export function CardDetailClient({ card }: CardDetailClientProps) {
     { id: 'comments', label: 'Comments', available: true },
   ];
 
-  const handleDownload = async (format: 'png' | 'json') => {
+  const handleDownload = async (format: 'png' | 'json' | 'original') => {
     const response = await fetch(`/api/cards/${card.slug}/download?format=${format}`);
     if (response.ok) {
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${card.slug}.${format}`;
+      // Determine file extension based on format and sourceFormat
+      let ext: string = format;
+      if (format === 'original') {
+        // Use the original source format extension
+        const extMap: Record<string, string> = {
+          'charx': 'charx',
+          'voxta': 'voxpkg',
+          'png': 'png',
+          'json': 'json',
+        };
+        ext = extMap[card.sourceFormat] || card.sourceFormat;
+      }
+      a.download = `${card.slug}.${ext}`;
       a.click();
       URL.revokeObjectURL(url);
     }

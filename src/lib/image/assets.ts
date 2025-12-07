@@ -1,7 +1,14 @@
-import type { ExtractedAsset } from '@/lib/card-parser';
 import { generateThumbnailBuffer } from './thumbnail';
 import { store, getPublicUrl } from '@/lib/storage';
 import { isCloudflare } from '@/lib/cloudflare/env';
+
+export interface ExtractedAsset {
+  name: string;
+  type: string;
+  ext: string;
+  buffer: Buffer | Uint8Array;
+  path?: string;
+}
 
 export interface SavedAsset {
   name: string;
@@ -23,6 +30,67 @@ const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'avif', 'bmp'];
  * Save extracted assets using the configured storage driver
  * Structure: assets/{cardId}/{filename}
  */
+// Process a single asset - returns SavedAsset or null on error
+async function processAsset(
+  cardId: string,
+  asset: ExtractedAsset,
+  index: number
+): Promise<SavedAsset | null> {
+  try {
+    const safeFileName = `${index}_${sanitizeFileName(asset.name)}.${asset.ext}`;
+    const storagePath = `assets/${cardId}/${safeFileName}`;
+
+    // Store asset (ensure it's a Buffer)
+    const bufferData = Buffer.isBuffer(asset.buffer) ? asset.buffer : Buffer.from(asset.buffer);
+    await store(bufferData, storagePath);
+    const publicUrl = getPublicUrl(isCloudflare() ? `r2://${storagePath}` : `file:///${storagePath}`);
+
+    const savedAsset: SavedAsset = {
+      name: asset.name,
+      type: asset.type,
+      ext: asset.ext,
+      path: publicUrl,
+    };
+
+    // Generate thumbnail for images
+    if (isImageFile(asset.ext)) {
+      if (isCloudflare()) {
+        // On Cloudflare: Use /api/thumb/ route which uses IMAGES binding
+        // Get dimensions from image buffer if PNG
+        if (asset.ext.toLowerCase() === 'png' && bufferData.length > 24) {
+          savedAsset.width = bufferData.readUInt32BE(16);
+          savedAsset.height = bufferData.readUInt32BE(20);
+        }
+        savedAsset.thumbnailPath = `/api/thumb/${storagePath}?type=asset`;
+      } else {
+        // On Node.js: Generate and store WebP thumbnail
+        try {
+          const thumbResult = await generateThumbnailBuffer(bufferData, 'asset');
+          const thumbFileName = `${index}_${sanitizeFileName(asset.name)}.webp`;
+          const thumbStoragePath = `assets/${cardId}/thumbnails/${thumbFileName}`;
+
+          await store(thumbResult.buffer, thumbStoragePath);
+          savedAsset.thumbnailPath = getPublicUrl(`file:///${thumbStoragePath}`);
+          savedAsset.width = thumbResult.originalWidth;
+          savedAsset.height = thumbResult.originalHeight;
+        } catch (error) {
+          console.error(`Failed to generate thumbnail for asset ${asset.name}:`, error);
+          // Fallback to /api/thumb/ route
+          savedAsset.thumbnailPath = `/api/thumb/${storagePath}?type=asset`;
+        }
+      }
+    }
+
+    return savedAsset;
+  } catch (error) {
+    console.error(`Failed to save asset ${asset.name}:`, error);
+    return null;
+  }
+}
+
+// Parallel batch processing with concurrency limit
+const BATCH_SIZE = 20; // Process 20 assets concurrently
+
 export async function saveAssets(
   cardId: string,
   extractedAssets: ExtractedAsset[]
@@ -33,63 +101,16 @@ export async function saveAssets(
 
   const savedAssets: SavedAsset[] = [];
 
-  for (let i = 0; i < extractedAssets.length; i++) {
-    const asset = extractedAssets[i];
+  // Process in parallel batches
+  for (let i = 0; i < extractedAssets.length; i += BATCH_SIZE) {
+    const batch = extractedAssets.slice(i, i + BATCH_SIZE);
+    const batchPromises = batch.map((asset, batchIndex) =>
+      processAsset(cardId, asset, i + batchIndex)
+    );
 
-    try {
-      const safeFileName = `${i}_${sanitizeFileName(asset.name)}.${asset.ext}`;
-      const storagePath = `assets/${cardId}/${safeFileName}`;
-
-      // Store asset
-      await store(asset.buffer, storagePath);
-      const publicUrl = getPublicUrl(isCloudflare() ? `r2://${storagePath}` : `file:///${storagePath}`);
-
-      const savedAsset: SavedAsset = {
-        name: asset.name,
-        type: asset.type,
-        ext: asset.ext,
-        path: publicUrl,
-      };
-
-      // Generate thumbnail for images (Local only, or if sharp works)
-      // On Cloudflare, we might skip this if sharp is not available,
-      // OR we rely on on-demand resizing if implemented.
-      // For now, try/catch around sharp.
-      if (isImageFile(asset.ext)) {
-        try {
-          // If on Cloudflare, we skip explicit asset thumbnail generation to avoid sharp issues
-          // unless we want to use CF Resizing for assets too.
-          // User said "anything INSIDE a zip keep local processing enabled for".
-          // But without fs/sharp, we can't do much "processing".
-          // We'll rely on the original image for assets on CF for now, or use resizing URL.
-
-          if (isCloudflare()) {
-             // Use CF Resizing URL pattern for the thumbnail
-             // Assuming /cdn-cgi/image/ pattern
-             // This requires the domain to be set up for it.
-             // We'll approximate using the publicUrl.
-             savedAsset.thumbnailPath = `/cdn-cgi/image/width=300,format=webp${publicUrl}`;
-             // We can't know dimensions without parsing, skipping width/height
-          } else {
-             // Local processing
-             const thumbResult = await generateThumbnailBuffer(asset.buffer, 'asset');
-             const thumbFileName = `${i}_${sanitizeFileName(asset.name)}.webp`;
-             const thumbStoragePath = `assets/${cardId}/thumbnails/${thumbFileName}`;
-
-             await store(thumbResult.buffer, thumbStoragePath);
-             savedAsset.thumbnailPath = getPublicUrl(`file:///${thumbStoragePath}`);
-             savedAsset.width = thumbResult.originalWidth;
-             savedAsset.height = thumbResult.originalHeight;
-          }
-
-        } catch (error) {
-          console.error(`Failed to generate thumbnail for asset ${asset.name}:`, error);
-        }
-      }
-
-      savedAssets.push(savedAsset);
-    } catch (error) {
-      console.error(`Failed to save asset ${asset.name}:`, error);
+    const results = await Promise.all(batchPromises);
+    for (const result of results) {
+      if (result) savedAssets.push(result);
     }
   }
 

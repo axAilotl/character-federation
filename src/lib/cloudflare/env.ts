@@ -7,11 +7,55 @@
 
 import type { D1Database, R2Bucket, Fetcher, IncomingRequestCfProperties, ExecutionContext } from '@cloudflare/workers-types';
 
+// Cloudflare Images binding types
+export interface ImagesTransformOptions {
+  width?: number;
+  height?: number;
+  fit?: 'scale-down' | 'contain' | 'cover' | 'crop' | 'pad';
+  gravity?: 'auto' | 'left' | 'right' | 'top' | 'bottom' | 'center' | { x: number; y: number };
+  quality?: number;
+  rotate?: 0 | 90 | 180 | 270;
+  blur?: number;
+  sharpen?: number;
+  background?: string;
+  trim?: { top?: number; right?: number; bottom?: number; left?: number };
+}
+
+export interface ImagesOutputOptions {
+  format: 'image/avif' | 'image/webp' | 'image/jpeg' | 'image/png';
+  quality?: number;
+}
+
+export interface ImagesDrawOptions {
+  top?: number;
+  left?: number;
+  bottom?: number;
+  right?: number;
+  opacity?: number;
+}
+
+export interface ImagesTransformableStream {
+  transform(options: ImagesTransformOptions): ImagesTransformableStream;
+  draw(overlay: ImagesTransformableStream, options?: ImagesDrawOptions): ImagesTransformableStream;
+  output(options: ImagesOutputOptions): Promise<{ response(): Response }>;
+}
+
+export interface ImagesBinding {
+  input(source: ReadableStream | ArrayBuffer | Blob): ImagesTransformableStream;
+  info(source: ReadableStream | ArrayBuffer | Blob): Promise<{
+    format: string;
+    fileSize: number;
+    width: number;
+    height: number;
+  }>;
+}
+
 // Cloudflare environment bindings
 export interface CloudflareEnv {
   DB: D1Database;
   R2: R2Bucket;
   ASSETS: Fetcher;
+  IMAGES: ImagesBinding;
   DISCORD_CLIENT_ID?: string;
   DISCORD_CLIENT_SECRET?: string;
   NEXT_PUBLIC_APP_URL?: string;
@@ -58,6 +102,16 @@ export async function getD1(): Promise<D1Database | null> {
 export async function getR2(): Promise<R2Bucket | null> {
   const ctx = await getCloudflareContext();
   return ctx?.env.R2 ?? null;
+}
+
+/**
+ * Get Images binding from Cloudflare context
+ * Used for image transformations (resize, format conversion, etc.)
+ * Must be called from an async context (API route, etc.)
+ */
+export async function getImages(): Promise<ImagesBinding | null> {
+  const ctx = await getCloudflareContext();
+  return ctx?.env.IMAGES ?? null;
 }
 
 /**
