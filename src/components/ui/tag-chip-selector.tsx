@@ -147,7 +147,7 @@ export function TagChipSelector({
 
         {/* Dropdown */}
         {isOpen && filteredTags.length > 0 && (
-          <div className="absolute top-full left-0 right-0 mt-1 bg-cosmic-teal border border-nebula/30 rounded-lg shadow-lg z-10 max-h-48 overflow-y-auto">
+          <div className="absolute top-full left-0 right-0 mt-1 bg-cosmic-teal border border-nebula/30 rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto">
             {filteredTags.map(tag => (
               <button
                 key={tag.slug}

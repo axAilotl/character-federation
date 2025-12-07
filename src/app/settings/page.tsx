@@ -11,6 +11,9 @@ interface TagInfoWithCount extends TagInfo {
   usage_count: number;
 }
 
+// NOTE: Tag blocking is handled ONLY by TagPreferencesManager (database-backed)
+// The old BannedTagsManager (localStorage) has been removed to avoid duplication
+
 function Toggle({
   checked,
   onChange,
@@ -61,73 +64,6 @@ function SettingsSection({
   );
 }
 
-function BannedTagsManager({
-  bannedTags,
-  onUpdate,
-}: {
-  bannedTags: string[];
-  onUpdate: (tags: string[]) => void;
-}) {
-  const [allTags, setAllTags] = useState<TagInfoWithCount[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-
-  useEffect(() => {
-    async function fetchTags() {
-      try {
-        const res = await fetch('/api/tags');
-        if (res.ok) {
-          const data = await res.json();
-          const tags: TagInfoWithCount[] = [];
-          for (const group of data) {
-            tags.push(...group.tags);
-          }
-          setAllTags(tags);
-        }
-      } catch (err) {
-        console.error('Error fetching tags:', err);
-      } finally {
-        setIsLoading(false);
-      }
-    }
-    fetchTags();
-  }, []);
-
-  // Convert slug-based banned tags to TagInfo objects
-  const selectedTags = useMemo(() => {
-    return bannedTags.map(slug => {
-      const tag = allTags.find(t => t.slug === slug);
-      return tag || { id: 0, name: slug, slug, category: null };
-    }).filter(t => t.id !== 0 || allTags.length === 0);
-  }, [bannedTags, allTags]);
-
-  const handleAdd = useCallback((tag: TagInfo) => {
-    if (!bannedTags.includes(tag.slug)) {
-      onUpdate([...bannedTags, tag.slug]);
-    }
-  }, [bannedTags, onUpdate]);
-
-  const handleRemove = useCallback((tagId: number) => {
-    const tag = allTags.find(t => t.id === tagId);
-    if (tag) {
-      onUpdate(bannedTags.filter(slug => slug !== tag.slug));
-    }
-  }, [allTags, bannedTags, onUpdate]);
-
-  return (
-    <TagChipSelector
-      label="Hidden Tags"
-      description="Cards with these tags will be hidden from the explore page"
-      selectedTags={selectedTags}
-      availableTags={allTags}
-      onAdd={handleAdd}
-      onRemove={handleRemove}
-      variant="red"
-      placeholder="Search tags to hide..."
-      isLoading={isLoading}
-    />
-  );
-}
-
 interface TagPreference {
   tagId: number;
   tagName: string;
@@ -160,7 +96,15 @@ function TagPreferencesManager() {
 
         if (prefsRes.ok) {
           const data = await prefsRes.json();
-          setPreferences(data.preferences || []);
+          // API returns { followed, blocked } arrays - convert to preferences format
+          const prefs: TagPreference[] = [];
+          for (const tag of data.followed || []) {
+            prefs.push({ tagId: tag.id, tagName: tag.name, tagSlug: tag.slug, preference: 'follow' });
+          }
+          for (const tag of data.blocked || []) {
+            prefs.push({ tagId: tag.id, tagName: tag.name, tagSlug: tag.slug, preference: 'block' });
+          }
+          setPreferences(prefs);
         }
       } catch (err) {
         console.error('Error fetching tag data:', err);
@@ -512,16 +456,12 @@ export default function SettingsPage() {
           />
         </SettingsSection>
 
-        <SettingsSection title="Content Filtering">
-          <BannedTagsManager
-            bannedTags={settings.bannedTags}
-            onUpdate={(tags) => updateSettings({ bannedTags: tags })}
-          />
-        </SettingsSection>
-
         {/* Tag Preferences - only show if logged in */}
         {user && (
-          <SettingsSection title="Tag Preferences (Feed)">
+          <SettingsSection title="Tag Preferences">
+            <p className="text-sm text-starlight/60 -mt-4 mb-4">
+              Follow tags to see them in your feed, block tags to hide cards from everywhere.
+            </p>
             <TagPreferencesManager />
           </SettingsSection>
         )}
