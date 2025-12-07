@@ -63,14 +63,19 @@ npm run cf:r2:create
 ALLOW_AUTO_ADMIN=true          # Enable admin bootstrap
 ADMIN_BOOTSTRAP_PASSWORD=xxx   # Bootstrap password
 DATABASE_PATH=./cardshub.db    # SQLite database path
+GITHUB_TOKEN=ghp_xxx           # GitHub token for @character-foundry packages
 
 # Production (Cloudflare secrets)
+GITHUB_TOKEN=ghp_xxx           # Required for npm install (GitHub Packages auth)
 DISCORD_CLIENT_ID=xxx          # Discord OAuth
 DISCORD_CLIENT_SECRET=xxx
 
 # Optional
 NEXT_PUBLIC_APP_URL=https://your-domain.com
 ```
+
+> **Note:** The `GITHUB_TOKEN` is required to install `@character-foundry/*` packages from GitHub Packages.
+> Set it as an environment variable in Cloudflare Pages/Workers settings.
 
 ## Scripts
 

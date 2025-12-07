@@ -22,6 +22,7 @@ CardsHub is a platform for sharing, discovering, and managing AI character cards
 - **Storage**: Abstracted with URL schemes (`file://`, `r2://`, future: `s3://`, `ipfs://`)
 - **Runtime**: Node.js 22 (local), Cloudflare Workers (production)
 - **Auth**: Cookie-based sessions with bcryptjs password hashing (work factor 12)
+- **Card Parsing**: `@character-foundry/*` packages from GitHub Packages (loader, png, schemas, core)
 
 ## Commands
 
@@ -110,7 +111,6 @@ src/
 │   │   ├── index.ts        # Driver registry
 │   │   ├── file.ts         # Local filesystem driver
 │   │   └── r2.ts           # Cloudflare R2 driver
-│   ├── character-foundry/  # Multi-format card parsing (PNG, JSON, CharX, Voxta)
 │   ├── card-parser/        # Token counting and metadata extraction
 │   ├── image/              # Thumbnail generation
 │   ├── validations/        # Zod schemas for API input validation
@@ -170,7 +170,13 @@ blocked     → admin removed, only admins see
 ```
 
 ### Character Card Parsing
-The `lib/character-foundry/` module handles:
+Uses `@character-foundry/*` packages from GitHub Packages registry:
+- `@character-foundry/loader` - Universal card loader (detects format, parses all types)
+- `@character-foundry/png` - PNG tEXt chunk read/write
+- `@character-foundry/schemas` - CCv2/CCv3 TypeScript types
+- `@character-foundry/core` - Shared utilities (toUint8Array, etc.)
+
+Features:
 - PNG tEXt chunk extraction (base64-encoded JSON in "chara" field)
 - CCv2 spec parsing (`chara_card_v2`)
 - CCv3 spec parsing (`chara_card_v3`) with assets support
