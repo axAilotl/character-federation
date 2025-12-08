@@ -485,6 +485,32 @@ The `@character-foundry/*` packages are hosted on GitHub Packages (not npm). Thi
 ### Cloudflare Build
 Set `GITHUB_TOKEN` in Cloudflare Dashboard → Workers & Pages → cardshub → Settings → Environment Variables (as a Secret for build-time).
 
+## D1 Database Migrations
+
+**CRITICAL: Schema changes must be manually applied to production D1!**
+
+The `schema.sql` file is NOT automatically applied to Cloudflare D1. When you add new tables or columns:
+
+1. Update `src/lib/db/schema.sql` with the changes
+2. **Manually run the migration on production D1:**
+   ```bash
+   # Check current tables
+   npx wrangler d1 execute cardshub-db --remote --command "SELECT name FROM sqlite_master WHERE type='table'"
+
+   # Run migration (example: adding v1.1 tables)
+   npx wrangler d1 execute cardshub-db --remote --command "
+   CREATE TABLE IF NOT EXISTS new_table (...);
+   ALTER TABLE existing_table ADD COLUMN new_column TEXT;
+   "
+   ```
+
+3. Verify the migration succeeded before deploying code that uses new schema
+
+**Common migration gotchas:**
+- `CREATE TABLE IF NOT EXISTS` is safe to re-run
+- `ALTER TABLE ADD COLUMN` will fail if column already exists
+- SQLite doesn't support `DROP COLUMN` - need to recreate table
+
 ## Known Limitations
 
 1. **D1 Transactions**: Not atomic - use `db.batch()` for critical multi-statement operations
@@ -493,3 +519,4 @@ Set `GITHUB_TOKEN` in Cloudflare Dashboard → Workers & Pages → cardshub → 
 4. **Thumbnails on CF**: Requires Image Transformations enabled in dashboard; falls back to original if disabled
 5. **Logging on CF**: Winston not available - uses simple console logger on Workers
 6. **Package Lock Local Links**: If `package-lock.json` has local symlinks instead of GitHub URLs, Cloudflare builds will fail (see GitHub Packages Setup above)
+7. **D1 Schema Sync**: Schema changes in `schema.sql` are NOT auto-applied to D1 - must run migrations manually (see above)
