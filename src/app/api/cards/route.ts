@@ -191,27 +191,11 @@ export async function POST(request: NextRequest) {
     const parseResult = parseCard(toUint8Array(buffer), { extractAssets: true });
     const cardData = parseResult.card.data;
 
-    // Find main image from assets - prefer small embedded icons over huge PNG containers
-    // For PNGs with embedded assets, look for iconx or similar small icon first
-    const smallIcon = parseResult.assets.find(a =>
-      a.type === 'icon' &&
-      !a.isMain &&
-      a.data &&
-      a.data.length < 5 * 1024 * 1024 // Under 5MB
-    );
-
-    if (smallIcon?.data) {
-      // Use small embedded icon (e.g., iconx at ~30-50KB)
-      mainImage = Buffer.from(smallIcon.data as Uint8Array);
-    } else if (parseResult.containerFormat === 'png') {
-      // Fallback to raw PNG if no small icon found
-      mainImage = Buffer.from(parseResult.rawBuffer as Uint8Array);
-    } else {
-      // For non-PNG formats, use main icon asset
-      const mainAsset = parseResult.assets.find(a => a.isMain && a.type === 'icon');
-      if (mainAsset?.data) {
-        mainImage = Buffer.from(mainAsset.data as Uint8Array);
-      }
+    // Find main image from assets
+    // loader 0.1.1+ provides isMain icon with tEXt chunks stripped (clean PNG for thumbnails)
+    const mainAsset = parseResult.assets.find(a => a.isMain && a.type === 'icon');
+    if (mainAsset?.data) {
+      mainImage = Buffer.from(mainAsset.data as Uint8Array);
     }
 
     // Convert non-main assets to our format

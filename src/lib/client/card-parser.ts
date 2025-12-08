@@ -127,19 +127,14 @@ export function parseFromBufferWithAssets(buffer: Uint8Array, filename?: string)
 
   const card = toParsedCard(result);
 
-  // Find main image
+  // Find main image from isMain icon asset
+  // loader 0.1.1+ provides isMain icon with tEXt chunks stripped (clean PNG for thumbnails)
   let mainImage: Uint8Array | undefined;
-  if (result.containerFormat === 'png') {
-    mainImage = result.rawBuffer instanceof Uint8Array
-      ? result.rawBuffer
-      : new Uint8Array(result.rawBuffer as ArrayBuffer);
-  } else {
-    const mainAsset = result.assets.find(a => a.isMain && a.type === 'icon');
-    if (mainAsset?.data) {
-      mainImage = mainAsset.data instanceof Uint8Array
-        ? mainAsset.data
-        : new Uint8Array(mainAsset.data as ArrayBuffer);
-    }
+  const mainAsset = result.assets.find(a => a.isMain && a.type === 'icon');
+  if (mainAsset?.data) {
+    mainImage = mainAsset.data instanceof Uint8Array
+      ? mainAsset.data
+      : new Uint8Array(mainAsset.data as ArrayBuffer);
   }
 
   // Convert non-main assets
