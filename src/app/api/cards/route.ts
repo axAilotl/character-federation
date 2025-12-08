@@ -407,7 +407,9 @@ export async function POST(request: NextRequest) {
     let voxtaDataForSingleChar: VoxtaData | null = null;
     const tryVoxtaParsing = async (): Promise<NextResponse | 'single' | null> => {
       try {
+        console.log('[Upload] Trying Voxta parsing...');
         const voxtaData = readVoxta(uint8Buffer, { maxFileSize: 50 * 1024 * 1024 });
+        console.log('[Upload] Voxta parsed successfully, characters:', voxtaData.characters.length);
 
         // If 2+ characters, create a collection
         if (voxtaData.characters.length >= 2 && voxtaData.package) {
@@ -435,7 +437,8 @@ export async function POST(request: NextRequest) {
           return 'single';
         }
         return null;
-      } catch {
+      } catch (voxtaError) {
+        console.log('[Upload] Voxta parsing failed:', voxtaError instanceof Error ? voxtaError.message : voxtaError);
         return null;
       }
     };
@@ -534,7 +537,9 @@ export async function POST(request: NextRequest) {
         // If parseCard fails with unrecognized ZIP, try Voxta as fallback
         // This handles cases where isVoxta() quick detection missed a valid .voxpkg
         const errorMessage = parseError instanceof Error ? parseError.message : String(parseError);
+        console.log('[Upload] parseCard failed:', errorMessage);
         if (errorMessage.includes('ZIP archive without recognized card structure')) {
+          console.log('[Upload] Attempting Voxta fallback for unrecognized ZIP...');
           const voxtaResponse = await tryVoxtaParsing();
           if (voxtaResponse instanceof NextResponse) return voxtaResponse;
           if (voxtaResponse === 'single' && voxtaDataForSingleChar) {
