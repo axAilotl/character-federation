@@ -205,6 +205,103 @@ export const userFollows = sqliteTable('user_follows', {
   index('idx_follows_following').on(table.followingId),
 ]);
 
+// v1.2: Standalone Lorebooks
+export const lorebooks = sqliteTable('lorebooks', {
+  id: text('id').primaryKey(),
+  slug: text('slug').unique().notNull(),
+  name: text('name').notNull(),
+  description: text('description'),
+  creatorId: text('creator_id').references(() => users.id, { onDelete: 'set null' }),
+  visibility: text('visibility', { enum: ['public', 'private', 'unlisted', 'blocked'] }).default('public'),
+  
+  // Content
+  contentBlob: text('content_blob').notNull(), // JSON string of the lorebook data
+  format: text('format').notNull().default('sillytavern'), // 'sillytavern', 'agnai', 'voxta'
+  
+  // Stats
+  tokenCount: integer('token_count').default(0),
+  entryCount: integer('entry_count').default(0),
+  
+  createdAt: integer('created_at').default(0),
+  updatedAt: integer('updated_at').default(0),
+}, (table) => [
+  index('idx_lorebooks_creator').on(table.creatorId),
+  index('idx_lorebooks_slug').on(table.slug),
+  index('idx_lorebooks_visibility').on(table.visibility),
+  index('idx_lorebooks_created').on(table.createdAt),
+]);
+
+// Lorebook Tags
+export const lorebookTags = sqliteTable('lorebook_tags', {
+  lorebookId: text('lorebook_id').notNull().references(() => lorebooks.id, { onDelete: 'cascade' }),
+  tagId: integer('tag_id').notNull().references(() => tags.id, { onDelete: 'cascade' }),
+}, (table) => [
+  primaryKey({ columns: [table.lorebookId, table.tagId] }),
+  index('idx_lorebook_tags_lb').on(table.lorebookId),
+  index('idx_lorebook_tags_tag').on(table.tagId),
+]);
+
+// v1.2: Presets (Instruct/Sampler settings)
+export const presets = sqliteTable('presets', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  description: text('description'),
+  creatorId: text('creator_id').references(() => users.id, { onDelete: 'set null' }),
+  visibility: text('visibility', { enum: ['public', 'private', 'unlisted', 'blocked'] }).default('public'),
+  
+  // Type & Content
+  type: text('type', { enum: ['instruct', 'sampler', 'voxta_scenario'] }).notNull(),
+  contentBlob: text('content_blob').notNull(), // JSON settings
+  
+  createdAt: integer('created_at').default(0),
+  updatedAt: integer('updated_at').default(0),
+}, (table) => [
+  index('idx_presets_creator').on(table.creatorId),
+  index('idx_presets_type').on(table.type),
+]);
+
+// Preset Tags
+export const presetTags = sqliteTable('preset_tags', {
+  presetId: text('preset_id').notNull().references(() => presets.id, { onDelete: 'cascade' }),
+  tagId: integer('tag_id').notNull().references(() => tags.id, { onDelete: 'cascade' }),
+}, (table) => [
+  primaryKey({ columns: [table.presetId, table.tagId] }),
+  index('idx_preset_tags_preset').on(table.presetId),
+  index('idx_preset_tags_tag').on(table.tagId),
+]);
+
+// v1.2: Collections
+export const collections = sqliteTable('collections', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  description: text('description'),
+  ownerId: text('owner_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  visibility: text('visibility', { enum: ['public', 'private', 'unlisted'] }).default('public'),
+  
+  isOfficial: integer('is_official').default(0), // For system curated lists
+  isFeatured: integer('is_featured').default(0), // For front page featuring
+  
+  createdAt: integer('created_at').default(0),
+  updatedAt: integer('updated_at').default(0),
+}, (table) => [
+  index('idx_collections_owner').on(table.ownerId),
+  index('idx_collections_visibility').on(table.visibility),
+]);
+
+// Collection Items (Polymorphic)
+export const collectionItems = sqliteTable('collection_items', {
+  collectionId: text('collection_id').notNull().references(() => collections.id, { onDelete: 'cascade' }),
+  itemType: text('item_type', { enum: ['card', 'lorebook', 'preset'] }).notNull(),
+  itemId: text('item_id').notNull(), // ID of the card/lorebook/preset
+  
+  order: integer('order').default(0),
+  addedAt: integer('added_at').default(0),
+}, (table) => [
+  primaryKey({ columns: [table.collectionId, table.itemType, table.itemId] }),
+  index('idx_col_items_collection').on(table.collectionId),
+  index('idx_col_items_item').on(table.itemType, table.itemId),
+]);
+
 // Type exports for inference
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
@@ -221,3 +318,12 @@ export type TagPreference = typeof tagPreferences.$inferSelect;
 export type NewTagPreference = typeof tagPreferences.$inferInsert;
 export type UserFollow = typeof userFollows.$inferSelect;
 export type NewUserFollow = typeof userFollows.$inferInsert;
+// v1.2 Types
+export type Lorebook = typeof lorebooks.$inferSelect;
+export type NewLorebook = typeof lorebooks.$inferInsert;
+export type Preset = typeof presets.$inferSelect;
+export type NewPreset = typeof presets.$inferInsert;
+export type Collection = typeof collections.$inferSelect;
+export type NewCollection = typeof collections.$inferInsert;
+export type CollectionItem = typeof collectionItems.$inferSelect;
+export type NewCollectionItem = typeof collectionItems.$inferInsert;
