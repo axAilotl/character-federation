@@ -135,6 +135,8 @@ async function handleVoxtaCollectionUpload(
   });
 
   // Create individual cards for each character
+  console.log(`[Collection] Creating ${voxtaData.characters.length} cards for collection ${collectionSlug}`);
+  let createdCount = 0;
   for (const extractedChar of voxtaData.characters) {
     // Convert Voxta character to CCv3
     const referencedBooks = extractedChar.data.MemoryBooks
@@ -218,7 +220,8 @@ async function handleVoxtaCollectionUpload(
     const allTags = [...new Set([...charTags, ...tagSlugs, 'collection'])];
 
     // Create card with collection reference
-    await createCard({
+    try {
+      await createCard({
       id: cardId,
       slug: cardSlug,
       name: cardData.name || 'Unknown',
@@ -254,12 +257,20 @@ async function handleVoxtaCollectionUpload(
         cardData: JSON.stringify(ccv3),
       },
     });
+      createdCount++;
+      console.log(`[Collection] Created card ${createdCount}/${voxtaData.characters.length}: ${cardData.name}`);
+    } catch (cardError) {
+      console.error(`[Collection] Failed to create card for ${cardData.name}:`, cardError);
+      // Continue with other cards
+    }
   }
+
+  console.log(`[Collection] Finished: ${createdCount}/${voxtaData.characters.length} cards created`);
 
   return {
     collectionId,
     collectionSlug,
-    cardCount: voxtaData.characters.length,
+    cardCount: createdCount,
   };
 }
 
