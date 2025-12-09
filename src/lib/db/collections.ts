@@ -32,24 +32,39 @@ export async function getCollectionBySlug(slug: string): Promise<CollectionDetai
 
   if (!row) return null;
 
-  // Get child cards
+  // Get child cards - use simpler query that works with minimal columns
   const cards = await db.prepare(`
     SELECT
-      cards.*,
-      cv.spec_version,
-      cv.source_format,
-      cv.tokens_total,
-      cv.has_alt_greetings,
-      cv.alt_greetings_count,
-      cv.has_lorebook,
-      cv.lorebook_entries_count,
-      cv.has_embedded_images,
-      cv.embedded_images_count,
-      cv.has_assets,
-      cv.assets_count,
+      cards.id,
+      cards.slug,
+      cards.name,
+      cards.description,
+      cards.creator,
+      cards.creator_notes,
+      cards.visibility,
+      cards.upvotes,
+      cards.downvotes,
+      cards.favorites_count,
+      cards.downloads_count,
+      cards.comments_count,
+      cards.forks_count,
+      cards.uploader_id,
+      cards.created_at,
+      cards.updated_at,
+      cards.head_version_id,
+      COALESCE(cv.spec_version, 'v2') as spec_version,
+      COALESCE(cv.source_format, 'png') as source_format,
+      COALESCE(cv.tokens_total, 0) as tokens_total,
+      COALESCE(cv.has_alt_greetings, 0) as has_alt_greetings,
+      COALESCE(cv.alt_greetings_count, 0) as alt_greetings_count,
+      COALESCE(cv.has_lorebook, 0) as has_lorebook,
+      COALESCE(cv.lorebook_entries_count, 0) as lorebook_entries_count,
+      COALESCE(cv.has_embedded_images, 0) as has_embedded_images,
+      COALESCE(cv.embedded_images_count, 0) as embedded_images_count,
+      COALESCE(cv.has_assets, 0) as has_assets,
+      COALESCE(cv.assets_count, 0) as assets_count,
       cv.image_path,
       cv.thumbnail_path,
-      u.id as uploader_id,
       u.username as uploader_username,
       u.display_name as uploader_display_name
     FROM cards
