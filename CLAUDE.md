@@ -217,10 +217,11 @@ export async function createCard(input): Promise<{ cardId, versionId }>
 ```
 public      → visible to everyone
 private     → owner only (and admins), not in browse/search/feed
-nsfw_only   → visible only with NSFW filter enabled
 unlisted    → direct link only, not in search/browse/feed
 blocked     → admin removed, only admins see
 ```
+
+Note: NSFW content is handled via tags (e.g., "nsfw" tag) and the existing blur filter in the UI, NOT via visibility states.
 
 ### Character Card Parsing
 Uses `@character-foundry/*` packages from GitHub Packages registry:
