@@ -405,6 +405,7 @@ export async function POST(request: NextRequest) {
     // Helper to try Voxta parsing (used for both detection and fallback)
     // Returns: response if handled, 'single' if single-char Voxta (needs voxtaData), null if not Voxta
     let voxtaDataForSingleChar: VoxtaData | null = null;
+    let lastVoxtaError: string | null = null;
     const tryVoxtaParsing = async (): Promise<NextResponse | 'single' | null> => {
       try {
         console.log('[Upload] Trying Voxta parsing...');
@@ -438,7 +439,8 @@ export async function POST(request: NextRequest) {
         }
         return null;
       } catch (voxtaError) {
-        console.log('[Upload] Voxta parsing failed:', voxtaError instanceof Error ? voxtaError.message : voxtaError);
+        lastVoxtaError = voxtaError instanceof Error ? voxtaError.message : String(voxtaError);
+        console.log('[Upload] Voxta parsing failed:', lastVoxtaError);
         return null;
       }
     };
@@ -591,8 +593,9 @@ export async function POST(request: NextRequest) {
             // Skip the rest of parseCard handling
             // Jump to ID generation (handled below after if/else)
           } else {
-            // Re-throw if not a Voxta package or Voxta parsing also failed
-            throw parseError;
+            // Voxta parsing failed - include debug info in error
+            const reason = lastVoxtaError || (voxtaDataForSingleChar ? 'parsed but 0 chars' : 'unknown');
+            throw new Error(`${errorMessage} (Voxta fallback failed: ${reason})`);
           }
         } else {
           throw parseError;
