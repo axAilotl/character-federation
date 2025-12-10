@@ -34,7 +34,22 @@ const nextConfig: NextConfig = {
   },
 
   ...(process.env.CLOUDFLARE_PAGES !== 'true' ? {
-    serverExternalPackages: ['better-sqlite3', 'tiktoken'],
+    serverExternalPackages: [
+      'better-sqlite3',
+      'tiktoken',
+      '@character-foundry/voxta',
+      '@character-foundry/loader',
+      '@character-foundry/charx',
+      '@character-foundry/png',
+      '@character-foundry/core',
+      '@character-foundry/federation',
+      '@character-foundry/tokenizers',
+      '@character-foundry/normalizer',
+      '@character-foundry/exporter',
+      '@character-foundry/schemas',
+      '@character-foundry/media',
+      '@character-foundry/lorebook',
+    ],
   } : {}),
 };
 
