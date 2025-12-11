@@ -221,8 +221,6 @@ export function useCardSearch(): UseCardSearchReturn {
   const goToPage = (newPage: number) => {
     if (newPage >= 1 && newPage <= totalPages) {
       setPage(newPage);
-      // Scroll to top when changing pages
-      window.scrollTo({ top: 0, behavior: 'smooth' });
     }
   };
 
