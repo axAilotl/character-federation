@@ -105,6 +105,26 @@ See [CLAUDE.md](./CLAUDE.md) for full API documentation.
 - `GET /api/feed` - Personalized feed (followed users/tags + trending)
 - `GET /api/users/me/tags` - User tag preferences (follow/block)
 
+## Troubleshooting
+
+### Production broken after schema change
+Schema changes in `schema.sql` are NOT auto-applied to D1. Run migrations manually:
+```bash
+npx wrangler d1 execute cardshub-db --remote --command "ALTER TABLE cards ADD COLUMN new_column TEXT"
+```
+
+### CI fails with 403 on @character-foundry packages
+New packages need visibility set to `public` and linked to source repo. Go to:
+https://github.com/orgs/character-foundry/packages → Package Settings → Visibility: Public + Link Repository
+
+### API works locally but fails on Cloudflare
+- Don't use generated columns in queries (use inline calculations)
+- Don't use FTS5 (falls back to LIKE on D1)
+- Check if schema was migrated to D1
+
+### Push doesn't update production
+Deployment is manual: `npm run cf:build && npm run cf:deploy`
+
 ## License
 
 MIT

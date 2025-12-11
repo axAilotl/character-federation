@@ -558,3 +558,40 @@ The `schema.sql` file is NOT automatically applied to Cloudflare D1. When you ad
 5. **Logging on CF**: Winston not available - uses simple console logger on Workers
 6. **Package Lock Local Links**: If `package-lock.json` has local symlinks instead of GitHub URLs, Cloudflare builds will fail (see GitHub Packages Setup above)
 7. **D1 Schema Sync**: Schema changes in `schema.sql` are NOT auto-applied to D1 - must run migrations manually (see above)
+
+## Common Mistakes (READ THIS)
+
+**These are real issues that have broken production. Don't repeat them.**
+
+### 1. Adding columns/tables but forgetting D1 migration
+**Symptom:** API returns 500 errors or empty results on production, works locally
+**Cause:** Added column to `schema.sql` but didn't run migration on D1
+**Fix:**
+```bash
+npx wrangler d1 execute cardshub-db --remote --command "ALTER TABLE cards ADD COLUMN new_column TEXT"
+```
+**Prevention:** After ANY schema.sql change, immediately run the migration on D1
+
+### 2. Using generated columns in queries
+**Symptom:** Query works locally but fails on D1
+**Cause:** Generated columns (like `trending_score REAL GENERATED ALWAYS AS (...)`) may not exist on D1
+**Fix:** Use inline calculation instead: `ORDER BY (upvotes + downloads_count * 0.5) DESC`
+**Prevention:** Always use inline calculations in queries, generated columns are just for local convenience
+
+### 3. New @character-foundry package not accessible in CI
+**Symptom:** CI fails with `403 Forbidden` or `permission_denied: read_package`
+**Cause:** New package published to GitHub Packages with `internal` visibility or not linked to source repo
+**Fix:** Go to package settings → Change visibility to `public` AND link to source repository
+**Prevention:** When publishing new packages, always set visibility to `public` and link to `character-foundry/character-foundry` repo
+
+### 4. Multiple useEffects fighting each other
+**Symptom:** State resets unexpectedly, clicking something triggers wrong behavior
+**Cause:** Multiple useEffects with overlapping concerns (e.g., one resets page to 1, another fetches current page)
+**Fix:** Consolidate into single effect with proper dependency tracking using refs
+**Prevention:** One source of truth for related state changes; use refs to track "did this actually change"
+
+### 5. Forgetting to deploy after pushing
+**Symptom:** "I pushed but production still broken"
+**Cause:** GitHub push doesn't auto-deploy to Cloudflare
+**Fix:** `npm run cf:build && npm run cf:deploy`
+**Prevention:** CI only runs lint/tests, deployment is manual
