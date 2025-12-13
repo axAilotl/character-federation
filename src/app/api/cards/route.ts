@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCards, createCard, computeContentHash, checkBlockedTags } from '@/lib/db/cards';
 import { parseCard } from '@character-foundry/loader';
-import { isVoxta, readVoxta, voxtaToCCv3, type VoxtaData, type VoxtaBook } from '@character-foundry/voxta';
+import { isVoxta, readVoxta, voxtaToCCv3, enrichVoxtaAsset, type VoxtaData, type VoxtaBook, type ExtractedVoxtaAsset } from '@character-foundry/voxta';
 import { toUint8Array } from '@character-foundry/core';
 import { countCardTokens } from '@/lib/client/tokenizer';
 import { saveAssets } from '@/lib/image';
@@ -25,6 +25,32 @@ import {
 
 // Use shared utility for counting embedded images
 import { countEmbeddedImages } from '@/lib/card-metadata';
+
+/**
+ * Convert Voxta assets to our standard format
+ */
+function convertVoxtaAssets(
+  voxtaAssets: ExtractedVoxtaAsset[]
+): Array<{ name: string; type: string; ext: string; buffer: Buffer; path?: string }> {
+  return voxtaAssets.map(asset => {
+    const pathParts = asset.path.split('/');
+    const filename = pathParts[pathParts.length - 1] || asset.path;
+    const extMatch = filename.match(/\.([^.]+)$/);
+    const ext = extMatch ? extMatch[1].toLowerCase() : '';
+    const name = filename.replace(/\.[^.]+$/, '') || filename;
+
+    // Get enriched metadata for type
+    const enriched = enrichVoxtaAsset(asset);
+
+    return {
+      name,
+      type: enriched.type,
+      ext,
+      buffer: Buffer.from(asset.buffer as Uint8Array),
+      path: asset.path,
+    };
+  });
+}
 
 /**
  * Handle multi-character Voxta package upload (creates collection + cards)
@@ -215,6 +241,25 @@ async function handleVoxtaCollectionUpload(
     const charTags = cardData.tags || [];
     const allTags = [...new Set([...charTags, ...tagSlugs, 'collection'])];
 
+    // Save extracted assets from Voxta character
+    let savedAssetsData: Array<{ name: string; type: string; ext: string; path: string; thumbnailPath?: string }> = [];
+    if (extractedChar.assets && extractedChar.assets.length > 0) {
+      try {
+        const convertedAssets = convertVoxtaAssets(extractedChar.assets);
+        const assetsResult = await saveAssets(cardId, convertedAssets);
+        savedAssetsData = assetsResult.assets.map(a => ({
+          name: a.name,
+          type: a.type,
+          ext: a.ext,
+          path: a.path,
+          thumbnailPath: a.thumbnailPath,
+        }));
+        console.log(`[Collection] Saved ${savedAssetsData.length} assets for ${cardData.name}`);
+      } catch (assetError) {
+        console.error(`[Collection] Failed to save assets for ${cardData.name}:`, assetError);
+      }
+    }
+
     // Process embedded images in card data
     let displayCcv3: unknown = ccv3;
     try {
@@ -251,8 +296,8 @@ async function handleVoxtaCollectionUpload(
         hasEmbeddedImages: embeddedImages > 0,
         embeddedImagesCount: embeddedImages,
         hasAssets: (extractedChar.assets?.length || 0) > 0,
-        assetsCount: extractedChar.assets?.length || 0,
-        savedAssets: null,
+        assetsCount: savedAssetsData.length || (extractedChar.assets?.length || 0),
+        savedAssets: savedAssetsData.length > 0 ? JSON.stringify(savedAssetsData) : null,
         imagePath: charImagePath,
         imageWidth: charImageWidth,
         imageHeight: charImageHeight,
@@ -540,6 +585,12 @@ export async function POST(request: NextRequest) {
       if (extractedChar.thumbnail) {
         mainImage = Buffer.from(extractedChar.thumbnail as Uint8Array);
       }
+
+      // Extract assets from Voxta character
+      if (extractedChar.assets && extractedChar.assets.length > 0) {
+        extractedAssets = convertVoxtaAssets(extractedChar.assets);
+        console.log(`[Upload] Extracted ${extractedAssets.length} assets from Voxta character`);
+      }
     } else {
       // Parse card using character-foundry loader
       // Wrap in try/catch to handle unrecognized formats (fallback to Voxta for ZIPs)
@@ -600,6 +651,12 @@ export async function POST(request: NextRequest) {
 
             if (extractedChar.thumbnail) {
               mainImage = Buffer.from(extractedChar.thumbnail as Uint8Array);
+            }
+
+            // Extract assets from Voxta character
+            if (extractedChar.assets && extractedChar.assets.length > 0) {
+              extractedAssets = convertVoxtaAssets(extractedChar.assets);
+              console.log(`[Upload] Extracted ${extractedAssets.length} assets from Voxta fallback`);
             }
             // Skip the rest of parseCard handling
             // Jump to ID generation (handled below after if/else)
