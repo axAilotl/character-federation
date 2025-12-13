@@ -1,7 +1,14 @@
 /**
  * Shared card metadata utilities
  * Single source of truth for counting embedded images, greetings, etc.
+ *
+ * Related packages:
+ * - @character-foundry/schemas: DerivedFeatures type, hasLorebook() function
+ * - @character-foundry/lorebook: Lorebook manipulation utilities
+ * - @character-foundry/loader: validateClientMetadata() for server-side validation
  */
+
+import type { CCv3CharacterBook } from '@character-foundry/schemas';
 
 /**
  * Count embedded images in text fields (markdown images, HTML images, data URIs)
@@ -26,6 +33,10 @@ export function countEmbeddedImages(texts: (string | undefined)[]): number {
 /**
  * Extract card metadata from card data
  * Use this for consistent metadata across client and server
+ *
+ * Note: This is a subset of DerivedFeatures from @character-foundry/schemas.
+ * For full feature extraction including Risu extensions, depth prompts, etc.,
+ * see the DerivedFeatures type and createEmptyFeatures() function.
  */
 export interface CardMetadataCounts {
   hasAlternateGreetings: boolean;
@@ -44,7 +55,7 @@ export function extractCardMetadata(data: {
   alternate_greetings?: string[];
   mes_example?: string;
   creator_notes?: string;
-  character_book?: { entries?: unknown[] };
+  character_book?: CCv3CharacterBook | null;
 }): CardMetadataCounts {
   const embeddedImages = countEmbeddedImages([
     data.description,
@@ -55,14 +66,15 @@ export function extractCardMetadata(data: {
   ]);
 
   const alternateGreetingsCount = data.alternate_greetings?.length || 0;
+  const lorebookEntriesCount = data.character_book?.entries?.length ?? 0;
 
   return {
     hasAlternateGreetings: alternateGreetingsCount > 0,
     alternateGreetingsCount,
     // Total = first message + alternates
     totalGreetingsCount: alternateGreetingsCount + 1,
-    hasLorebook: !!(data.character_book?.entries?.length),
-    lorebookEntriesCount: data.character_book?.entries?.length || 0,
+    hasLorebook: lorebookEntriesCount > 0,
+    lorebookEntriesCount,
     hasEmbeddedImages: embeddedImages > 0,
     embeddedImagesCount: embeddedImages,
   };

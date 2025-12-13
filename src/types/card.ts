@@ -1,120 +1,79 @@
-// Character Card Types following CCv2/v3 spec
-
+// Character Card Types - Re-exported from @character-foundry/schemas
 // CCv2 Spec: https://github.com/malfoyslastname/character-card-spec-v2/blob/main/spec_v2.md
-export interface CharacterCardV2 {
-  spec: 'chara_card_v2';
-  spec_version: '2.0';
-  data: {
-    name: string;
-    description: string;
-    personality: string;
-    scenario: string;
-    first_mes: string;
-    mes_example: string;
-
-    // Optional fields
-    creator_notes?: string;
-    system_prompt?: string;
-    post_history_instructions?: string;
-    alternate_greetings?: string[];
-
-    // Tags
-    tags?: string[];
-
-    // Creator info
-    creator?: string;
-    character_version?: string;
-
-    // Character book (lorebook)
-    character_book?: CharacterBook;
-
-    // Extensions
-    extensions?: Record<string, unknown>;
-  };
-}
-
 // CCv3 Spec: https://github.com/kwaroran/character-card-spec-v3/blob/main/SPEC_V3.md
-export interface CharacterCardV3 {
-  spec: 'chara_card_v3';
-  spec_version: '3.0';
-  data: {
-    name: string;
-    description: string;
-    personality: string;
-    scenario: string;
-    first_mes: string;
-    mes_example: string;
 
-    // Optional fields
-    creator_notes?: string;
-    system_prompt?: string;
-    post_history_instructions?: string;
-    alternate_greetings?: string[];
+// Re-export canonical types from @character-foundry/schemas
+export type {
+  CCv2Wrapped,
+  CCv2Data,
+  CCv3Data,
+  CCv3DataInner,
+  CCv2CharacterBook,
+  CCv3CharacterBook,
+  CCv2LorebookEntry,
+  CCv3LorebookEntry,
+  AssetDescriptor,
+  SourceFormat as SchemaSourceFormat, // Renamed - schemas has granular format (png_v2, json_v3, etc.)
+  DerivedFeatures,
+  NormalizedCard,
+} from '@character-foundry/schemas';
 
-    // Tags
-    tags?: string[];
+// Re-export Zod schemas for validation
+export {
+  CCv2WrappedSchema,
+  CCv2DataSchema,
+  CCv3DataSchema,
+  CCv3DataInnerSchema,
+  CCv2CharacterBookSchema,
+  CCv3CharacterBookSchema,
+  CCv2LorebookEntrySchema,
+  CCv3LorebookEntrySchema,
+  AssetDescriptorSchema,
+  SourceFormatSchema as SchemaSourceFormatSchema, // Renamed - granular format schema
+} from '@character-foundry/schemas';
 
-    // Creator info
-    creator?: string;
-    character_version?: string;
+// Re-export utility functions
+export {
+  detectSpec,
+  detectSpecDetailed,
+  hasLorebook,
+  looksLikeCard,
+  CardNormalizer,
+  safeParse,
+  zodErrorToMessage,
+  createEmptyFeatures,
+  createEmptyNormalizedCard,
+} from '@character-foundry/schemas';
 
-    // Character book (lorebook)
-    character_book?: CharacterBook;
+// Legacy type aliases for backward compatibility
+import type {
+  CCv2Wrapped,
+  CCv3Data,
+  CCv3CharacterBook,
+  CCv3LorebookEntry,
+  AssetDescriptor,
+} from '@character-foundry/schemas';
 
-    // V3 specific - Assets
-    assets?: CharacterAsset[];
+// Local SourceFormat (simplified - schemas package has granular png_v2/png_v3/json_v2/json_v3)
+export type SourceFormat = 'png' | 'json' | 'charx' | 'voxta';
 
-    // V3 specific - Group greetings
-    group_only_greetings?: string[];
+/** @deprecated Use CCv2Wrapped from @character-foundry/schemas */
+export type CharacterCardV2 = CCv2Wrapped;
 
-    // Extensions
-    extensions?: Record<string, unknown>;
-  };
-}
+/** @deprecated Use CCv3Data from @character-foundry/schemas */
+export type CharacterCardV3 = CCv3Data;
 
-// Character book (lorebook) structure
-export interface CharacterBook {
-  name?: string;
-  description?: string;
-  scan_depth?: number;
-  token_budget?: number;
-  recursive_scanning?: boolean;
-  extensions?: Record<string, unknown>;
-  entries: CharacterBookEntry[];
-}
+/** @deprecated Use CCv3CharacterBook from @character-foundry/schemas */
+export type CharacterBook = CCv3CharacterBook;
 
-export interface CharacterBookEntry {
-  keys: string[];
-  content: string;
-  extensions?: Record<string, unknown>;
-  enabled: boolean;
-  insertion_order: number;
-  case_sensitive?: boolean;
+/** @deprecated Use CCv3LorebookEntry from @character-foundry/schemas */
+export type CharacterBookEntry = CCv3LorebookEntry;
 
-  // Optional fields
-  name?: string;
-  priority?: number;
-  id?: number;
-  comment?: string;
-  selective?: boolean;
-  secondary_keys?: string[];
-  constant?: boolean;
-  position?: 'before_char' | 'after_char';
-}
-
-// V3 Assets
-export interface CharacterAsset {
-  type: 'icon' | 'background' | 'user_icon' | 'system_icon';
-  uri: string;
-  name?: string;
-  ext?: string;
-}
+/** @deprecated Use AssetDescriptor from @character-foundry/schemas */
+export type CharacterAsset = AssetDescriptor;
 
 // Union type for any character card
-export type CharacterCard = CharacterCardV2 | CharacterCardV3;
-
-// Source format type
-export type SourceFormat = 'png' | 'json' | 'charx' | 'voxta';
+export type CharacterCard = CCv2Wrapped | CCv3Data;
 
 // Common extension types
 export interface ChubExtensions {

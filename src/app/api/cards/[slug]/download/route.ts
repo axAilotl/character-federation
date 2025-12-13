@@ -5,7 +5,16 @@ import { getR2 } from '@/lib/cloudflare/env';
 import { embedIntoPNG } from '@character-foundry/png';
 import { toUint8Array } from '@character-foundry/core';
 import { getSession } from '@/lib/auth';
-import type { CCv2Data, CCv3Data } from '@character-foundry/schemas';
+import { z } from 'zod';
+import {
+  CCv2WrappedSchema,
+  CCv3DataSchema,
+  type CCv2Data,
+  type CCv3Data,
+} from '@character-foundry/schemas';
+
+// Union schema for card data validation
+const CardDataSchema = z.union([CCv2WrappedSchema, CCv3DataSchema]);
 
 interface RouteParams {
   params: Promise<{ slug: string }>;
@@ -157,11 +166,20 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       const imageBuffer = await getFileFromStorage(imageKey);
 
       if (imageBuffer) {
-        // Embed the card data into the PNG
-        // Type assertion needed: CharacterCard and CCv2Data/CCv3Data are structurally identical
+        // Validate card data with Zod schema before embedding
+        const parseResult = CardDataSchema.safeParse(card.cardData);
+        if (!parseResult.success) {
+          console.error('Invalid card data structure:', parseResult.error.message);
+          return NextResponse.json(
+            { error: 'Invalid card data format' },
+            { status: 500 }
+          );
+        }
+
+        // Embed the validated card data into the PNG
         const embeddedPng = embedIntoPNG(
           toUint8Array(imageBuffer),
-          card.cardData as CCv2Data | CCv3Data,
+          parseResult.data as CCv2Data | CCv3Data,
           { key: 'chara', base64: true, minify: true }
         );
 

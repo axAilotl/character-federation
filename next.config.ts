@@ -30,6 +30,16 @@ const nextConfig: NextConfig = {
       }
     }
 
+    // Fallback for Node.js modules used by @character-foundry/core (fflate)
+    if (!isServer) {
+      config.resolve = config.resolve || {};
+      config.resolve.fallback = {
+        ...config.resolve.fallback,
+        module: false,
+        worker_threads: false,
+      };
+    }
+
     return config;
   },
 

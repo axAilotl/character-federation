@@ -225,16 +225,41 @@ Note: NSFW content is handled via tags (e.g., "nsfw" tag) and the existing blur 
 
 ### Character Card Parsing
 Uses `@character-foundry/*` packages from GitHub Packages registry:
-- `@character-foundry/loader` (0.1.6) - Universal card loader (detects format, parses all types)
-- `@character-foundry/voxta` (0.1.6) - Voxta package parsing
-- `@character-foundry/png` (0.0.3) - PNG tEXt chunk read/write
-- `@character-foundry/charx` (0.0.3) - CharX package parsing
-- `@character-foundry/core` (0.0.2) - Shared utilities (toUint8Array, etc.)
-- `@character-foundry/tokenizers` (0.1.0) - Token counting
-- `@character-foundry/schemas` (0.1.0) - CCv2/CCv3 TypeScript types
-- `@character-foundry/character-foundry` (0.1.0) - Meta package (includes all)
+
+**Core Packages:**
+- `@character-foundry/loader` (0.1.8) - Universal card loader (detects format, parses all types)
+- `@character-foundry/schemas` (0.2.0) - CCv2/CCv3 TypeScript types with **Zod validation schemas**
+- `@character-foundry/core` (0.1.0) - Shared utilities (toUint8Array, etc.)
+- `@character-foundry/tokenizers` (0.1.1) - Token counting
+
+**Format Packages:**
+- `@character-foundry/png` (0.0.4) - PNG tEXt chunk read/write
+- `@character-foundry/charx` (0.0.4) - CharX package parsing
+- `@character-foundry/voxta` (0.1.8) - Voxta package parsing
+
+**NEW Packages:**
+- `@character-foundry/lorebook` (0.0.2) - Lorebook parsing, extraction, and insertion utilities
+- `@character-foundry/normalizer` (0.1.2) - Convert between CCv2, CCv3, and NormalizedCard formats
+- `@character-foundry/exporter` (0.1.2) - Export to PNG, CharX, or Voxta formats
+- `@character-foundry/media` (0.1.1) - Image processing utilities for character cards
+- `@character-foundry/federation` (0.2.0) - Federation layer for syncing via ActivityPub
+- `@character-foundry/app-framework` (0.2.1) - Schema-driven UI framework with extension registry
+
+**Meta Package:**
+- `@character-foundry/character-foundry` (0.1.1) - Includes all packages above
 
 **ESM Configuration**: These packages are ESM-only. For Next.js server-side compatibility, all `@character-foundry/*` packages must be listed in `serverExternalPackages` in `next.config.ts`.
+
+**New in schemas 0.2.0 - Zod Validation:**
+```typescript
+import { CCv2Schema, CCv3Schema, LorebookSchema } from '@character-foundry/schemas';
+
+// Validate and parse card data with full type inference
+const result = CCv3Schema.safeParse(cardData);
+if (result.success) {
+  const card = result.data; // Fully typed CCv3 card
+}
+```
 
 Features:
 - PNG tEXt chunk extraction (base64-encoded JSON in "chara" field)
@@ -246,6 +271,9 @@ Features:
 - Metadata detection (alt greetings, lorebook, embedded images)
 - Handles malformed JSON with trailing garbage data
 - Binary asset extraction with `parseFromBufferWithAssets()`
+- **NEW:** Lorebook parsing and manipulation with `@character-foundry/lorebook`
+- **NEW:** Card format normalization with `@character-foundry/normalizer`
+- **NEW:** Card export to multiple formats with `@character-foundry/exporter`
 
 ### Storage Abstraction
 The `lib/storage/` module provides:
