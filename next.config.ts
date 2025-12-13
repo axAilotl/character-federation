@@ -45,11 +45,22 @@ const nextConfig: NextConfig = {
         path: false,
         crypto: false,
       };
-      // Force fflate to use the browser-compatible ESM version instead of CJS
-      // The CJS version uses createRequire which doesn't exist in browsers
+
+      // Force browser conditions for package.json exports resolution
+      // This prevents fflate from resolving to the "node" conditional export
+      config.resolve.conditionNames = ['browser', 'import', 'default'];
+
+      // Force fflate to use the browser-compatible ESM version
+      // The node version uses createRequire which doesn't exist in browsers
+      const fflateBasePath = path.resolve(__dirname, 'node_modules/fflate');
       config.resolve.alias = {
         ...config.resolve.alias,
-        'fflate': path.resolve(__dirname, 'node_modules/fflate/esm/browser.js'),
+        // Match all fflate import variations
+        'fflate$': path.join(fflateBasePath, 'esm/browser.js'),
+        'fflate/esm/index.mjs': path.join(fflateBasePath, 'esm/browser.js'),
+        'fflate/esm/index.js': path.join(fflateBasePath, 'esm/browser.js'),
+        'fflate/lib/node.cjs': path.join(fflateBasePath, 'esm/browser.js'),
+        'fflate': path.join(fflateBasePath, 'esm/browser.js'),
       };
     }
 
