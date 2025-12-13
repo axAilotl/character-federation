@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { Modal, ModalBody, Button, Badge } from '@/components/ui';
+import { Modal, ModalBody, Button, Badge, CoinIcon } from '@/components/ui';
 import type { CardListItem, SourceFormat } from '@/types/card';
 import { useAuth } from '@/lib/auth/context';
 import { cn } from '@/lib/utils/cn';
@@ -104,7 +104,7 @@ export function CardModal({ card, isOpen, onClose }: CardModalProps) {
       <ModalBody className="p-0">
         <div className="flex flex-col lg:flex-row">
           {/* Left side - Image */}
-          <div className="relative w-full lg:w-2/5 aspect-[3/4] lg:aspect-auto lg:min-h-[600px] flex-shrink-0 group">
+          <div className="relative w-full lg:w-2/5 aspect-[3/4] lg:aspect-auto lg:min-h-[660px] flex-shrink-0 group">
             {(card.thumbnailPath || card.imagePath) ? (
               <Image
                 src={card.thumbnailPath || card.imagePath!}
@@ -123,7 +123,7 @@ export function CardModal({ card, isOpen, onClose }: CardModalProps) {
           </div>
 
           {/* Right side - Content */}
-          <div className="flex-1 p-6 space-y-5 overflow-y-auto max-h-[600px] lg:max-h-none">
+          <div className="flex-1 p-6 space-y-5 overflow-y-auto max-h-[660px] lg:max-h-none">
             {/* Header with close button */}
             <div className="flex items-start justify-between">
               <div>
@@ -246,10 +246,7 @@ export function CardModal({ card, isOpen, onClose }: CardModalProps) {
 
               {/* Token count with coin icon */}
               <div className="flex items-center gap-1.5 text-starlight/60">
-                <svg className="w-5 h-5 text-solar" fill="currentColor" viewBox="0 0 24 24">
-                  <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="1.5" fill="none" />
-                  <text x="12" y="16" textAnchor="middle" fontSize="10" fill="currentColor" fontWeight="bold">T</text>
-                </svg>
+                <CoinIcon className="w-5 h-5 text-solar" />
                 <span className="font-medium">{card.tokensTotal.toLocaleString()}</span>
               </div>
             </div>

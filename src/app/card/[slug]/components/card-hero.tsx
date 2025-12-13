@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
-import { Button, Badge } from '@/components/ui';
+import { Button, Badge, CoinIcon, ThumbsUpIcon, ThumbsDownIcon } from '@/components/ui';
 import type { CardDetail, SourceFormat } from '@/types/card';
 import { useAuth } from '@/lib/auth/context';
 import { useSettings } from '@/lib/settings';
@@ -275,24 +275,28 @@ export function CardHero({ card, permanentTokens, onDownload }: CardHeroProps) {
 
             {/* Voting controls + Stats row */}
             <div className="flex flex-wrap items-center gap-4 mb-4 p-3 rounded-lg bg-deep-space/50">
-              {/* Voting buttons */}
-              <div className="flex items-center gap-2">
-                <button className="p-2 rounded-lg hover:bg-aurora/20 text-starlight/60 hover:text-aurora transition-colors">
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
-                  </svg>
-                </button>
-                <span className={`font-bold text-lg ${card.score >= 0 ? 'text-aurora' : 'text-red-400'}`}>
+              {/* Voting buttons - restructured with icons and counts */}
+              <div className="flex items-center gap-3">
+                {/* Upvote button with count */}
+                <div className="flex flex-col items-center">
+                  <button className="p-2 rounded-lg hover:bg-aurora/20 text-starlight/60 hover:text-aurora transition-colors">
+                    <ThumbsUpIcon className="w-5 h-5" />
+                  </button>
+                  <span className="text-xs text-aurora">+{card.upvotes}</span>
+                </div>
+
+                {/* Score in middle */}
+                <span className={`font-bold text-xl ${card.score >= 0 ? 'text-aurora' : 'text-red-400'}`}>
                   {card.score >= 0 ? '+' : ''}{card.score}
                 </span>
-                <button className="p-2 rounded-lg hover:bg-red-400/20 text-starlight/60 hover:text-red-400 transition-colors">
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                  </svg>
-                </button>
-                <span className="text-xs text-starlight/40 ml-1">
-                  ({card.upvotes} up / {card.downvotes} down)
-                </span>
+
+                {/* Downvote button with count */}
+                <div className="flex flex-col items-center">
+                  <button className="p-2 rounded-lg hover:bg-red-400/20 text-starlight/60 hover:text-red-400 transition-colors">
+                    <ThumbsDownIcon className="w-5 h-5" />
+                  </button>
+                  <span className="text-xs text-red-400">-{card.downvotes}</span>
+                </div>
               </div>
 
               <div className="w-px h-6 bg-nebula/20" />
@@ -330,47 +334,6 @@ export function CardHero({ card, permanentTokens, onDownload }: CardHeroProps) {
               </div>
 
               <FormatBadge format={card.sourceFormat} specVersion={card.specVersion} />
-
-              {/* Visibility badge with edit dropdown */}
-              <div className="relative">
-                {isOwner && !isEditingVisibility ? (
-                  <button
-                    onClick={() => setIsEditingVisibility(true)}
-                    className="flex items-center gap-1 hover:opacity-80 transition-opacity"
-                    title="Click to change visibility"
-                  >
-                    <VisibilityBadge visibility={currentVisibility} />
-                    <svg className="w-3 h-3 text-starlight/50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                    </svg>
-                  </button>
-                ) : isOwner && isEditingVisibility ? (
-                  <div className="flex items-center gap-2">
-                    <select
-                      value={currentVisibility}
-                      onChange={(e) => handleVisibilityChange(e.target.value as CardVisibility)}
-                      disabled={isUpdatingVisibility}
-                      className="px-2 py-1 text-xs bg-deep-space border border-nebula/30 rounded text-starlight"
-                    >
-                      {VISIBILITY_OPTIONS.map((opt) => (
-                        <option key={opt.value} value={opt.value}>
-                          {opt.icon} {opt.label}
-                        </option>
-                      ))}
-                    </select>
-                    <button
-                      onClick={() => setIsEditingVisibility(false)}
-                      className="text-starlight/50 hover:text-starlight"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                      </svg>
-                    </button>
-                  </div>
-                ) : (
-                  <VisibilityBadge visibility={currentVisibility} />
-                )}
-              </div>
 
               {/* Asset count for charx/voxta */}
               {card.hasAssets && card.assetsCount > 0 && (
@@ -410,6 +373,50 @@ export function CardHero({ card, permanentTokens, onDownload }: CardHeroProps) {
                   {card.embeddedImagesCount} Image{card.embeddedImagesCount !== 1 ? 's' : ''}
                 </Badge>
               )}
+
+              {/* Spacer to push visibility to end */}
+              <div className="flex-1" />
+
+              {/* Visibility badge with edit dropdown - moved to end */}
+              <div className="relative">
+                {isOwner && !isEditingVisibility ? (
+                  <button
+                    onClick={() => setIsEditingVisibility(true)}
+                    className="flex items-center gap-1 hover:opacity-80 transition-opacity"
+                    title="Click to change visibility"
+                  >
+                    <VisibilityBadge visibility={currentVisibility} />
+                    <svg className="w-3 h-3 text-starlight/50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                    </svg>
+                  </button>
+                ) : isOwner && isEditingVisibility ? (
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={currentVisibility}
+                      onChange={(e) => handleVisibilityChange(e.target.value as CardVisibility)}
+                      disabled={isUpdatingVisibility}
+                      className="px-2 py-1 text-xs bg-deep-space border border-nebula/30 rounded text-starlight"
+                    >
+                      {VISIBILITY_OPTIONS.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.icon} {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={() => setIsEditingVisibility(false)}
+                      className="text-starlight/50 hover:text-starlight"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                ) : (
+                  <VisibilityBadge visibility={currentVisibility} />
+                )}
+              </div>
             </div>
 
             {/* Action buttons */}
@@ -453,9 +460,7 @@ export function CardHero({ card, permanentTokens, onDownload }: CardHeroProps) {
         <div className="flex-shrink-0 w-full md:w-56">
           <div className="glass rounded-lg p-4 border border-nebula/20">
             <h3 className="text-sm font-semibold text-starlight/80 mb-3 flex items-center gap-2">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
-              </svg>
+              <CoinIcon className="w-4 h-4 text-solar" />
               Token Breakdown
             </h3>
             <div className="space-y-2 text-xs">

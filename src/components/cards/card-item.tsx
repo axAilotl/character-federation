@@ -8,6 +8,7 @@ import { useSettings } from '@/lib/settings';
 import { useAuth } from '@/lib/auth/context';
 import { cn } from '@/lib/utils/cn';
 import { formatCount } from '@/lib/utils/format';
+import { CoinIcon, ThumbsUpIcon, DownloadIcon, HeartIcon } from '@/components/ui';
 
 // Format badge component - matches the style of other top row badges
 function FormatBadge({ format, specVersion }: { format: SourceFormat; specVersion: string }) {
@@ -21,6 +22,12 @@ function FormatBadge({ format, specVersion }: { format: SourceFormat; specVersio
       {label}
     </div>
   );
+}
+
+// Check if a card is "new" (uploaded within last 7 days)
+function isNewCard(createdAt: number): boolean {
+  const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  return createdAt > sevenDaysAgo;
 }
 
 interface CardItemProps {
@@ -88,15 +95,12 @@ export function CardItem({ card, onQuickView }: CardItemProps) {
     <Wrapper
       {...wrapperProps as any}
       className={cn(
-        'glass-card rounded-xl overflow-hidden group cursor-pointer transition-transform hover:scale-[1.02] block',
-        settings.cardSize === 'large' && 'scale-100' // Base size when large mode
+        'glass-card rounded-xl overflow-hidden group cursor-pointer transition-transform hover:scale-[1.02] flex flex-col',
+        settings.cardSize === 'large' ? 'aspect-[3/4.5]' : 'aspect-[3/4]'
       )}
     >
-      {/* Image container */}
-      <div className={cn(
-        'relative overflow-hidden',
-        settings.cardSize === 'large' ? 'aspect-[3/4.5]' : 'aspect-[3/4]'
-      )}>
+      {/* Image container - fills entire card */}
+      <div className="relative overflow-hidden flex-1">
         {(card.thumbnailPath || card.imagePath) ? (
           <Image
             src={card.thumbnailPath || card.imagePath!}
@@ -117,27 +121,8 @@ export function CardItem({ card, onQuickView }: CardItemProps) {
         {/* Overlay gradient */}
         <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-transparent" />
 
-        {/* Feed reason badge - top left */}
-        {card.feedReason && (
-          <div className="absolute top-2 left-2">
-            <span className={cn(
-              'text-xs px-2 py-0.5 rounded-full',
-              card.feedReason === 'followed_user' && 'bg-blue-500/20 text-blue-400',
-              card.feedReason === 'followed_tag' && 'bg-purple-500/20 text-purple-400',
-              card.feedReason === 'trending' && 'bg-amber-500/20 text-amber-400',
-            )}>
-              {card.feedReason === 'followed_user' && 'Following'}
-              {card.feedReason === 'followed_tag' && 'Tag'}
-              {card.feedReason === 'trending' && 'Trending'}
-            </span>
-          </div>
-        )}
-
-        {/* Metadata icons - top left (offset if feed reason shown) */}
-        <div className={cn(
-          'absolute left-2 flex flex-wrap gap-1',
-          card.feedReason ? 'top-9' : 'top-2'
-        )}>
+        {/* Metadata icons - top left */}
+        <div className="absolute top-2 left-2 flex flex-wrap gap-1">
           {card.hasAlternateGreetings && card.alternateGreetingsCount > 0 && (
             <div className="flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-black/60 text-xs text-starlight/80" title="Total greetings (first + alternates)">
               <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -179,7 +164,7 @@ export function CardItem({ card, onQuickView }: CardItemProps) {
             <Link
               href={`/collection/${card.collectionSlug}`}
               onClick={(e) => e.stopPropagation()}
-              className="px-1.5 py-0.5 rounded bg-nebula/80 text-xs text-white font-medium hover:bg-nebula transition-colors"
+              className="px-1.5 py-0.5 rounded bg-purple-600 text-xs text-white font-medium hover:bg-purple-500 transition-colors"
               title={card.collectionName ? `Part of ${card.collectionName}` : 'Part of a collection'}
             >
               COLLECTION
@@ -189,13 +174,37 @@ export function CardItem({ card, onQuickView }: CardItemProps) {
 
         {/* Bottom info overlay */}
         <div className="absolute bottom-0 left-0 right-0 p-3">
+          {/* Status badges - NEW / Trending / Following - above character name */}
+          <div className="flex flex-wrap gap-1 mb-1.5">
+            {isNewCard(card.createdAt) && (
+              <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-500/90 text-white font-medium">
+                NEW
+              </span>
+            )}
+            {card.feedReason === 'trending' && (
+              <span className="text-xs px-2 py-0.5 rounded-full bg-amber-500/90 text-white font-medium">
+                Trending
+              </span>
+            )}
+            {card.feedReason === 'followed_user' && (
+              <span className="text-xs px-2 py-0.5 rounded-full bg-blue-500/90 text-white font-medium">
+                Following
+              </span>
+            )}
+            {card.feedReason === 'followed_tag' && (
+              <span className="text-xs px-2 py-0.5 rounded-full bg-purple-500/90 text-white font-medium">
+                Tag
+              </span>
+            )}
+          </div>
+
           {/* Character name */}
           <h3 className="font-bold text-base text-white mb-0.5 line-clamp-1 group-hover:text-nebula transition-colors">
             {card.name}
           </h3>
 
-          {/* Creator name and uploader - clickable */}
-          <div className="text-xs text-starlight/70 line-clamp-1 mb-1.5">
+          {/* Creator name and uploader - clickable - improved contrast */}
+          <div className="text-xs text-starlight/90 line-clamp-1 mb-1.5">
             {card.creator && (
               <span>by {card.creator}</span>
             )}
@@ -210,24 +219,26 @@ export function CardItem({ card, onQuickView }: CardItemProps) {
             )}
           </div>
 
-          {/* Tags - truncated */}
-          <div className="flex flex-wrap gap-1">
-            {card.tags.slice(0, 3).map((tag) => (
-              <Link
-                key={tag.id}
-                href={`/explore?tags=${tag.slug}`}
-                onClick={handleTagClick}
-                className="text-xs px-1.5 py-0.5 rounded bg-white/10 text-white/80 hover:bg-nebula/30 hover:text-white transition-colors"
-              >
-                {tag.name}
-              </Link>
-            ))}
-            {card.tags.length > 3 && (
-              <span className="text-xs px-1.5 py-0.5 rounded bg-white/10 text-white/60">
-                +{card.tags.length - 3}
-              </span>
-            )}
-          </div>
+          {/* Tags - truncated - improved contrast */}
+          {card.tags.length > 0 && (
+            <div className="flex flex-wrap gap-1">
+              {card.tags.slice(0, 3).map((tag) => (
+                <Link
+                  key={tag.id}
+                  href={`/explore?tags=${tag.slug}`}
+                  onClick={handleTagClick}
+                  className="text-xs px-1.5 py-0.5 rounded bg-gray-700/80 text-gray-200 hover:bg-nebula/50 hover:text-white transition-colors"
+                >
+                  {tag.name}
+                </Link>
+              ))}
+              {card.tags.length > 3 && (
+                <span className="text-xs px-1.5 py-0.5 rounded bg-gray-700/80 text-gray-400">
+                  +{card.tags.length - 3}
+                </span>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
@@ -241,8 +252,9 @@ export function CardItem({ card, onQuickView }: CardItemProps) {
             </span>
           )}
 
-          {/* Votes */}
+          {/* Votes with thumbs up icon */}
           <div className="flex items-center gap-1">
+            <ThumbsUpIcon className={cn('w-3.5 h-3.5', card.score >= 0 ? 'text-aurora' : 'text-red-400')} />
             <span className={card.score >= 0 ? 'text-aurora' : 'text-red-400'}>
               {card.score >= 0 ? '+' : ''}{card.score}
             </span>
@@ -250,9 +262,7 @@ export function CardItem({ card, onQuickView }: CardItemProps) {
 
           {/* Downloads */}
           <div className="flex items-center gap-1 text-starlight/60">
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-            </svg>
+            <DownloadIcon className="w-3.5 h-3.5" />
             <span>{formatCount(card.downloadsCount)}</span>
           </div>
 
@@ -267,23 +277,14 @@ export function CardItem({ card, onQuickView }: CardItemProps) {
             )}
             title={user ? (isFavorited ? 'Remove from favorites' : 'Add to favorites') : 'Login to favorite'}
           >
-            <svg
-              className="w-3.5 h-3.5"
-              fill={isFavorited ? 'currentColor' : 'none'}
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-            </svg>
+            <HeartIcon className="w-3.5 h-3.5" filled={isFavorited} />
             <span>{formatCount(favoritesCount)}</span>
           </button>
         </div>
 
-        {/* Tokens */}
+        {/* Tokens with coin icon */}
         <div className="flex items-center gap-1 text-starlight/60">
-          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
-          </svg>
+          <CoinIcon className="w-3.5 h-3.5 text-solar" />
           <span>{formatCount(card.tokensTotal)}</span>
         </div>
       </div>
