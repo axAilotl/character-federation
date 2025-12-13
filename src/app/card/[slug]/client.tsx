@@ -39,11 +39,13 @@ export function CardDetailClient({ card }: CardDetailClientProps) {
   }, [card.tokens]);
 
   // Extract custom CSS from creator notes if present
+  // Use processed creator_notes from cardData (has rewritten image URLs)
+  const processedCreatorNotes = card.cardData.data.creator_notes || card.creatorNotes;
   const customCss = useMemo(() => {
-    if (!card.creatorNotes) return null;
-    const styleMatch = card.creatorNotes.match(/<style[^>]*>([\s\S]*?)<\/style>/i);
+    if (!processedCreatorNotes) return null;
+    const styleMatch = processedCreatorNotes.match(/<style[^>]*>([\s\S]*?)<\/style>/i);
     return styleMatch ? styleMatch[1] : null;
-  }, [card.creatorNotes]);
+  }, [processedCreatorNotes]);
 
   // Inject custom CSS that persists across tabs
   useEffect(() => {
@@ -135,7 +137,7 @@ export function CardDetailClient({ card }: CardDetailClientProps) {
       <div className="w-full">
         <div className="glass rounded-xl p-6">
           {activeSection === 'notes' && (
-            <NotesSection creatorNotes={card.creatorNotes} isNsfw={isNsfw} />
+            <NotesSection creatorNotes={card.cardData.data.creator_notes || card.creatorNotes} isNsfw={isNsfw} />
           )}
 
           {activeSection === 'general' && (
