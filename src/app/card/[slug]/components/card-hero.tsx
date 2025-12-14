@@ -182,7 +182,7 @@ export function CardHero({ card, permanentTokens, onDownload }: CardHeroProps) {
   };
 
   return (
-    <div className="relative rounded-xl overflow-hidden mb-0" data-card-hero>
+    <div className="relative rounded-xl overflow-hidden mb-4" data-card-hero>
       <div className="absolute inset-0 bg-gradient-to-r from-deep-space via-deep-space/80 to-transparent z-10" data-card-hero-overlay />
 
       {(card.thumbnailPath || card.imagePath) && (

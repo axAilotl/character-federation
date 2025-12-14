@@ -82,8 +82,12 @@ export function CharacterSection({ cardData, tokens }: CharacterSectionProps) {
         {hasDescription && (
           <Collapsible
             title="Description"
-            defaultOpen
-            badge={<span className="text-xs text-starlight/50">{tokens.description.toLocaleString()} tokens</span>}
+            badge={
+              <span className="text-xs text-starlight/50">
+                {tokens.description.toLocaleString()} tokens
+                <span className="ml-2 text-amber-400/80">⚠️ spoiler warning</span>
+              </span>
+            }
           >
             <FieldContent content={cardData.data.description!} />
           </Collapsible>

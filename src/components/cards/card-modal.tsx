@@ -146,12 +146,7 @@ export function CardModal({ card, isOpen, onClose }: CardModalProps) {
               </button>
             </div>
 
-            {/* Tagline / Description */}
-            {card.description && (
-              <p className="text-starlight/80 text-sm leading-relaxed line-clamp-3">
-                {stripHtml(card.description)}
-              </p>
-            )}
+            {/* TODO: Tagline field - will replace description here */}
 
             {/* Tags */}
             {card.tags.length > 0 && (

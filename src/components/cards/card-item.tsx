@@ -95,12 +95,12 @@ export function CardItem({ card, onQuickView }: CardItemProps) {
     <Wrapper
       {...wrapperProps as any}
       className={cn(
-        'glass-card rounded-xl overflow-hidden group cursor-pointer transition-transform hover:scale-[1.02] flex flex-col',
+        'glass-card rounded-xl overflow-hidden group cursor-pointer transition-transform hover:scale-[1.02]',
         settings.cardSize === 'large' ? 'aspect-[3/4.5]' : 'aspect-[3/4]'
       )}
     >
       {/* Image container - fills entire card */}
-      <div className="relative overflow-hidden flex-1">
+      <div className="relative overflow-hidden w-full h-full">
         {(card.thumbnailPath || card.imagePath) ? (
           <Image
             src={card.thumbnailPath || card.imagePath!}
@@ -190,7 +190,7 @@ export function CardItem({ card, onQuickView }: CardItemProps) {
 
           {/* Tags - white text for contrast */}
           {card.tags.length > 0 && (
-            <div className="flex flex-wrap gap-1">
+            <div className="flex flex-wrap gap-1 mb-2">
               {card.tags.slice(0, 3).map((tag) => (
                 <Link
                   key={tag.id}
@@ -208,53 +208,53 @@ export function CardItem({ card, onQuickView }: CardItemProps) {
               )}
             </div>
           )}
-        </div>
-      </div>
 
-      {/* Stats bar */}
-      <div className="p-2.5 flex items-center justify-between text-xs">
-        <div className="flex items-center gap-2.5">
-          {/* NSFW indicator */}
-          {isNsfw && (
-            <span className="text-orange-400/60" title="NSFW">
-              🔥
-            </span>
-          )}
+          {/* Stats row - floating over image */}
+          <div className="flex items-center justify-between text-xs">
+            <div className="flex items-center gap-2">
+              {/* NSFW indicator */}
+              {isNsfw && (
+                <span className="text-orange-400" title="NSFW">
+                  🔥
+                </span>
+              )}
 
-          {/* Votes with thumbs up icon */}
-          <div className="flex items-center gap-1">
-            <ThumbsUpIcon className={cn('w-3.5 h-3.5', card.score >= 0 ? 'text-aurora' : 'text-red-400')} />
-            <span className={card.score >= 0 ? 'text-aurora' : 'text-red-400'}>
-              {card.score >= 0 ? '+' : ''}{card.score}
-            </span>
+              {/* Votes with thumbs up icon */}
+              <div className="flex items-center gap-1">
+                <ThumbsUpIcon className={cn('w-3.5 h-3.5', card.score >= 0 ? 'text-aurora' : 'text-red-400')} />
+                <span className={cn('font-medium', card.score >= 0 ? 'text-aurora' : 'text-red-400')}>
+                  {card.score >= 0 ? '+' : ''}{card.score}
+                </span>
+              </div>
+
+              {/* Downloads */}
+              <div className="flex items-center gap-1 text-white/80">
+                <DownloadIcon className="w-3.5 h-3.5" />
+                <span>{formatCount(card.downloadsCount)}</span>
+              </div>
+
+              {/* Favorites - clickable button */}
+              <button
+                onClick={handleFavoriteClick}
+                disabled={!user || isTogglingFavorite}
+                className={cn(
+                  'flex items-center gap-1 transition-colors',
+                  user ? 'hover:text-pink-400 cursor-pointer' : 'cursor-default',
+                  isFavorited ? 'text-pink-400' : 'text-white/80'
+                )}
+                title={user ? (isFavorited ? 'Remove from favorites' : 'Add to favorites') : 'Login to favorite'}
+              >
+                <HeartIcon className="w-3.5 h-3.5" filled={isFavorited} />
+                <span>{formatCount(favoritesCount)}</span>
+              </button>
+            </div>
+
+            {/* Tokens with coin icon */}
+            <div className="flex items-center gap-1 text-white/80">
+              <CoinIcon className="w-3.5 h-3.5 text-solar" />
+              <span>{formatCount(card.tokensTotal)}</span>
+            </div>
           </div>
-
-          {/* Downloads */}
-          <div className="flex items-center gap-1 text-starlight/60">
-            <DownloadIcon className="w-3.5 h-3.5" />
-            <span>{formatCount(card.downloadsCount)}</span>
-          </div>
-
-          {/* Favorites - clickable button */}
-          <button
-            onClick={handleFavoriteClick}
-            disabled={!user || isTogglingFavorite}
-            className={cn(
-              'flex items-center gap-1 transition-colors',
-              user ? 'hover:text-pink-400 cursor-pointer' : 'cursor-default',
-              isFavorited ? 'text-pink-400' : 'text-starlight/60'
-            )}
-            title={user ? (isFavorited ? 'Remove from favorites' : 'Add to favorites') : 'Login to favorite'}
-          >
-            <HeartIcon className="w-3.5 h-3.5" filled={isFavorited} />
-            <span>{formatCount(favoritesCount)}</span>
-          </button>
-        </div>
-
-        {/* Tokens with coin icon */}
-        <div className="flex items-center gap-1 text-starlight/60">
-          <CoinIcon className="w-3.5 h-3.5 text-solar" />
-          <span>{formatCount(card.tokensTotal)}</span>
         </div>
       </div>
     </Wrapper>
