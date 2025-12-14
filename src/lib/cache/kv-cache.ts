@@ -13,14 +13,14 @@ import { getKV } from '@/lib/cloudflare';
 export const CACHE_TTL = {
   /** Individual card detail - 24 hours (cards rarely change) */
   CARD_DETAIL: 86400,
-  /** Card listings - 5 minutes (new uploads should appear reasonably quickly) */
-  CARD_LISTING: 300,
+  /** Card listings - 1 hour (new uploads can wait, reduces KV writes) */
+  CARD_LISTING: 3600,
   /** User profile - 1 hour */
   USER_PROFILE: 3600,
   /** Tags list - 1 hour (very stable) */
   TAGS: 3600,
-  /** Platform stats - 5 minutes */
-  STATS: 300,
+  /** Platform stats - 15 minutes */
+  STATS: 900,
 } as const;
 
 /**
