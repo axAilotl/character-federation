@@ -84,3 +84,20 @@ export const ToggleAdminSchema = z.object({
 });
 
 export type ToggleAdminInput = z.infer<typeof ToggleAdminSchema>;
+
+// Storage cleanup - either specific keys or all orphans
+export const StorageCleanupSchema = z.union([
+  z.object({
+    keys: z.array(z.string().min(1).max(500)).min(1).max(1000),
+    all: z.literal(false).optional(),
+  }),
+  z.object({
+    keys: z.undefined().optional(),
+    all: z.literal(true),
+  }),
+]).refine(
+  (data) => data.keys !== undefined || data.all === true,
+  { message: 'Provide keys array or all: true' }
+);
+
+export type StorageCleanupInput = z.infer<typeof StorageCleanupSchema>;

@@ -10,6 +10,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { getDatabase } from '@/lib/db/async-db';
 import { getR2 } from '@/lib/cloudflare/env';
+import { parseBody, StorageCleanupSchema } from '@/lib/validations';
 
 interface StorageStats {
   totalObjects: number;
@@ -79,15 +80,13 @@ export async function GET(request: NextRequest) {
       if (v.image_path) referencedKeys.add(v.image_path.replace(/^r2:\/\//, ''));
       if (v.thumbnail_path) referencedKeys.add(v.thumbnail_path.replace(/^r2:\/\//, ''));
       if (v.saved_assets) {
-        try {
-          const assets = JSON.parse(v.saved_assets);
-          if (Array.isArray(assets)) {
-            for (const a of assets) {
-              const path = typeof a === 'string' ? a : a?.path;
-              if (path) referencedKeys.add(path.replace(/^r2:\/\//, ''));
-            }
+        const assets = JSON.parse(v.saved_assets);
+        if (Array.isArray(assets)) {
+          for (const a of assets) {
+            const path = typeof a === 'string' ? a : a?.path;
+            if (path) referencedKeys.add(path.replace(/^r2:\/\//, ''));
           }
-        } catch { /* ignore parse errors */ }
+        }
       }
     }
 
@@ -163,15 +162,9 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    const body = await request.json();
-    const { keys, all } = body as { keys?: string[]; all?: boolean };
-
-    if (!keys && !all) {
-      return NextResponse.json(
-        { error: 'Provide keys array or all: true' },
-        { status: 400 }
-      );
-    }
+    const parsed = await parseBody(request, StorageCleanupSchema);
+    if ('error' in parsed) return parsed.error;
+    const { keys, all } = parsed.data;
 
     const r2 = await getR2();
     if (!r2) {
@@ -203,15 +196,13 @@ export async function DELETE(request: NextRequest) {
         if (v.image_path) referencedKeys.add(v.image_path.replace(/^r2:\/\//, ''));
         if (v.thumbnail_path) referencedKeys.add(v.thumbnail_path.replace(/^r2:\/\//, ''));
         if (v.saved_assets) {
-          try {
-            const assets = JSON.parse(v.saved_assets);
-            if (Array.isArray(assets)) {
-              for (const a of assets) {
-                const path = typeof a === 'string' ? a : a?.path;
-                if (path) referencedKeys.add(path.replace(/^r2:\/\//, ''));
-              }
+          const assets = JSON.parse(v.saved_assets);
+          if (Array.isArray(assets)) {
+            for (const a of assets) {
+              const path = typeof a === 'string' ? a : a?.path;
+              if (path) referencedKeys.add(path.replace(/^r2:\/\//, ''));
             }
-          } catch { /* ignore */ }
+          }
         }
       }
 

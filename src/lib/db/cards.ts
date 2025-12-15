@@ -758,19 +758,15 @@ export async function deleteCard(cardId: string): Promise<void> {
     }
     // Parse saved_assets JSON array
     if (version.saved_assets) {
-      try {
-        const assets = JSON.parse(version.saved_assets);
-        if (Array.isArray(assets)) {
-          for (const asset of assets) {
-            // Assets can be strings (paths) or objects with path property
-            const path = typeof asset === 'string' ? asset : asset?.path;
-            if (path) {
-              storageUrlsToDelete.push(path);
-            }
+      const assets = JSON.parse(version.saved_assets);
+      if (Array.isArray(assets)) {
+        for (const asset of assets) {
+          // Assets can be strings (paths) or objects with path property
+          const path = typeof asset === 'string' ? asset : asset?.path;
+          if (path) {
+            storageUrlsToDelete.push(path);
           }
         }
-      } catch {
-        console.error(`[deleteCard] Failed to parse saved_assets for card ${cardId}`);
       }
     }
   }
