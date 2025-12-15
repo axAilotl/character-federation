@@ -177,6 +177,9 @@ export interface CardListItem {
   // Visibility
   visibility: CardVisibility;
 
+  // Processing status (for large file uploads)
+  processingStatus?: 'complete' | 'pending' | 'processing' | 'failed';
+
   // Metadata
   hasAlternateGreetings: boolean;
   alternateGreetingsCount: number;

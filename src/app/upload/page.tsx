@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { AppShell } from '@/components/layout';
 import { Button, Badge } from '@/components/ui';
@@ -9,6 +9,7 @@ import type { ParseResultWithAssets } from '@/lib/client/card-parser';
 // Dynamic imports to avoid SSR bundling issues
 const getCardParser = () => import('@/lib/client/card-parser');
 const getPresignedUpload = () => import('@/lib/client/presigned-upload');
+const getChunkedUpload = () => import('@/lib/client/chunked-upload');
 
 interface ParseState {
   status: 'idle' | 'parsing' | 'parsed' | 'error';
@@ -16,7 +17,7 @@ interface ParseState {
   error?: string;
 }
 
-type UploadStage = 'preparing' | 'presigning' | 'uploading' | 'confirming' | 'processing' | null;
+type UploadStage = 'preparing' | 'presigning' | 'uploading' | 'confirming' | 'processing' | 'chunking' | null;
 type CardVisibility = 'public' | 'private' | 'unlisted';
 
 const VISIBILITY_OPTIONS: { value: CardVisibility; label: string; description: string }[] = [
@@ -36,22 +37,11 @@ export default function UploadPage() {
   const [error, setError] = useState<string | null>(null);
   const [parseState, setParseState] = useState<ParseState>({ status: 'idle' });
   const [visibility, setVisibility] = useState<CardVisibility>('public');
-  const [usePresigned, setUsePresigned] = useState<boolean | null>(null);
+  // DISABLED: Presigned uploads are broken in multiple ways (wrong paths, no collection support, asset issues)
+  // Force all uploads through FormData which actually works
+  // TODO: Re-enable with proper large file support when fixed
+  const [usePresigned] = useState<boolean>(false);
   const [currentUploadFile, setCurrentUploadFile] = useState<string | null>(null);
-
-  // Check if presigned uploads are available on mount
-  useEffect(() => {
-    const checkPresigned = async () => {
-      try {
-        const { checkPresignedAvailable } = await getPresignedUpload();
-        const available = await checkPresignedAvailable();
-        setUsePresigned(available);
-      } catch {
-        setUsePresigned(false);
-      }
-    };
-    checkPresigned();
-  }, []);
 
   const handleDrag = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -100,10 +90,10 @@ export default function UploadPage() {
       return;
     }
 
-    // Validate file size (50MB max for Cloudflare deployment)
-    if (selectedFile.size > 50 * 1024 * 1024) {
-      setError('File size must be less than 50MB');
-      return;
+    // No file size limit - large files use chunked upload
+    // Show warning for very large files (>500MB)
+    if (selectedFile.size > 500 * 1024 * 1024) {
+      console.log(`Large file detected: ${(selectedFile.size / 1024 / 1024).toFixed(1)}MB - will use chunked upload`);
     }
 
     setFile(selectedFile);
@@ -162,9 +152,61 @@ export default function UploadPage() {
       const { computeContentHash } = await getCardParser();
       const contentHash = await computeContentHash(buffer);
 
-      // Use presigned URLs for single-character uploads when available
-      // Multi-char packages still use traditional upload (server needs to process them)
-      if (usePresigned && !parseState.result.isMultiCharPackage) {
+      // Check if we should use chunked upload for large files
+      const { shouldUseChunkedUpload, uploadChunked } = await getChunkedUpload();
+
+      // Use chunked upload for large single-character files (>=75MB)
+      // Multi-char packages (Voxta collections) always use FormData for server-side handling
+      if (shouldUseChunkedUpload(file.size) && !parseState.result.isMultiCharPackage) {
+        setUploadStage('chunking');
+
+        const result = await uploadChunked(
+          file,
+          parseState.result,
+          visibility,
+          contentHash,
+          (progress) => {
+            switch (progress.stage) {
+              case 'creating':
+                setUploadStage('preparing');
+                setUploadProgress(progress.percent);
+                break;
+              case 'uploading':
+                setUploadStage('chunking');
+                setUploadProgress(progress.percent);
+                setCurrentUploadFile(
+                  progress.currentChunk && progress.totalChunks
+                    ? `chunk ${progress.currentChunk}/${progress.totalChunks}`
+                    : null
+                );
+                break;
+              case 'completing':
+                setUploadStage('confirming');
+                setUploadProgress(progress.percent);
+                break;
+              case 'done':
+                setUploadStage('processing');
+                setUploadProgress(100);
+                break;
+              case 'error':
+                throw new Error(progress.error || 'Upload failed');
+            }
+          }
+        );
+
+        if (result.success && result.slug) {
+          router.push(`/card/${result.slug}`);
+        } else {
+          throw new Error(result.error || 'Upload failed');
+        }
+        return;
+      }
+
+      // Use presigned URLs for single-character PNG/JSON/CharX uploads when available
+      // ALL Voxta packages use FormData - server handles multi-char detection and collections
+      // (Client-side multi-char detection was unreliable, causing collections to not be created)
+      const isVoxtaPackage = parseState.result.card.sourceFormat === 'voxta';
+      if (usePresigned && !parseState.result.isMultiCharPackage && !isVoxtaPackage) {
         const { uploadWithPresignedUrls } = await getPresignedUpload();
 
         const result = await uploadWithPresignedUrls(
@@ -487,7 +529,7 @@ export default function UploadPage() {
               </div>
 
               <p className="text-xs text-starlight/40">
-                Maximum file size: 50MB
+                Large files supported (uses chunked upload)
               </p>
             </div>
           )}
@@ -547,11 +589,15 @@ export default function UploadPage() {
                   <span className="text-starlight/80">
                     {uploadStage === 'preparing' && 'Preparing upload...'}
                     {uploadStage === 'presigning' && 'Getting upload URLs...'}
+                    {uploadStage === 'chunking' && (currentUploadFile
+                      ? `Uploading ${currentUploadFile}... ${uploadProgress}%`
+                      : `Uploading large file... ${uploadProgress}%`
+                    )}
                     {uploadStage === 'uploading' && (currentUploadFile
                       ? `Uploading ${currentUploadFile}... ${uploadProgress}%`
                       : `Uploading file... ${uploadProgress}%`
                     )}
-                    {uploadStage === 'confirming' && 'Confirming upload...'}
+                    {uploadStage === 'confirming' && 'Finalizing upload...'}
                     {uploadStage === 'processing' && 'Processing card & assets...'}
                   </span>
                 </div>

@@ -32,6 +32,8 @@ export interface CardRow {
   head_version_id: string | null;
   visibility: 'public' | 'nsfw_only' | 'unlisted' | 'blocked';
   moderation_state: 'ok' | 'review' | 'blocked';
+  processing_status: 'complete' | 'pending' | 'processing' | 'failed' | null;
+  upload_id: string | null;
   upvotes: number;
   downvotes: number;
   favorites_count: number;
@@ -128,6 +130,7 @@ export interface CardWithVersionRow {
   head_version_id: string | null;
   visibility: 'public' | 'nsfw_only' | 'unlisted' | 'blocked';
   moderation_state: 'ok' | 'review' | 'blocked';
+  processing_status: 'complete' | 'pending' | 'processing' | 'failed' | null;
   upvotes: number;
   downvotes: number;
   favorites_count: number;
@@ -204,6 +207,11 @@ export function isCloudflareRuntime(): boolean {
  * This function should NEVER be called on Cloudflare Workers.
  */
 export async function getDb(): Promise<UnifiedDb> {
+  // CRITICAL: Must check BEFORE any dynamic imports to prevent fs/better-sqlite3 from loading on Workers
+  if (isCloudflareRuntime()) {
+    throw new Error('getDb() is not supported on Cloudflare Workers. Use getDatabase() from async-db instead.');
+  }
+
   if (localDb) return localDb;
 
   // Dynamic import for Node.js modules - works with Next.js bundling
@@ -260,20 +268,33 @@ export function closeDb(): void {
  * @deprecated Use getDatabase().transaction() from ./async-db instead
  */
 export async function transaction<T>(fn: (db: UnifiedDb) => T): Promise<T> {
+  // This function should NEVER be called on Cloudflare Workers
+  if (isCloudflareRuntime()) {
+    throw new Error('transaction() is not supported on Cloudflare Workers. Use getDatabase().transaction() instead.');
+  }
   const db = await getDb();
   return (db as any).transaction(() => fn(db))();
 }
 
-// FTS functions (works on both local SQLite and Cloudflare D1)
+// FTS functions (works on local SQLite only - D1 doesn't support FTS5)
+// IMPORTANT: Must check isCloudflareRuntime() BEFORE calling getDb() to avoid
+// triggering dynamic imports of fs/better-sqlite3 which crash on Workers
 export async function rebuildFtsIndex(): Promise<void> {
-  const db = await getDb();
-  await db.prepare('DELETE FROM cards_fts').run();
-  await db.prepare(`
-    INSERT INTO cards_fts(card_id, name, description, creator, creator_notes)
-    SELECT id, name, COALESCE(description, ''), COALESCE(creator, ''), COALESCE(creator_notes, '')
-    FROM cards
-    WHERE visibility = 'public'
-  `).run();
+  // Skip on Cloudflare - FTS5 not supported on D1
+  if (isCloudflareRuntime()) return;
+
+  try {
+    const db = await getDb();
+    await db.prepare('DELETE FROM cards_fts').run();
+    await db.prepare(`
+      INSERT INTO cards_fts(card_id, name, description, creator, creator_notes)
+      SELECT id, name, COALESCE(description, ''), COALESCE(creator, ''), COALESCE(creator_notes, '')
+      FROM cards
+      WHERE visibility = 'public'
+    `).run();
+  } catch (error) {
+    console.warn('[FTS] rebuildFtsIndex failed:', error);
+  }
 }
 
 export async function updateFtsIndex(
@@ -283,17 +304,31 @@ export async function updateFtsIndex(
   creator: string | null,
   creatorNotes: string | null
 ): Promise<void> {
-  const db = await getDb();
-  // Delete existing entry first
-  await db.prepare('DELETE FROM cards_fts WHERE card_id = ?').run(cardId);
-  // Insert new entry
-  await db.prepare(`
-    INSERT INTO cards_fts(card_id, name, description, creator, creator_notes)
-    VALUES (?, ?, ?, ?, ?)
-  `).run(cardId, name, description || '', creator || '', creatorNotes || '');
+  // Skip on Cloudflare - FTS5 not supported on D1
+  if (isCloudflareRuntime()) return;
+
+  try {
+    const db = await getDb();
+    // Delete existing entry first
+    await db.prepare('DELETE FROM cards_fts WHERE card_id = ?').run(cardId);
+    // Insert new entry
+    await db.prepare(`
+      INSERT INTO cards_fts(card_id, name, description, creator, creator_notes)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(cardId, name, description || '', creator || '', creatorNotes || '');
+  } catch (error) {
+    console.debug('[FTS] updateFtsIndex skipped:', error);
+  }
 }
 
 export async function removeFtsIndex(cardId: string): Promise<void> {
-  const db = await getDb();
-  await db.prepare('DELETE FROM cards_fts WHERE card_id = ?').run(cardId);
+  // Skip on Cloudflare - FTS5 not supported on D1
+  if (isCloudflareRuntime()) return;
+
+  try {
+    const db = await getDb();
+    await db.prepare('DELETE FROM cards_fts WHERE card_id = ?').run(cardId);
+  } catch (error) {
+    console.debug('[FTS] removeFtsIndex skipped:', error);
+  }
 }

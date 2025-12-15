@@ -2,11 +2,10 @@
  * R2 Presigned URL Utilities
  *
  * Generates presigned URLs for direct client uploads to R2.
- * Uses the S3-compatible API which requires separate R2 API credentials.
+ * Uses aws4fetch which is Cloudflare Workers compatible (no Node.js fs deps).
  */
 
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { AwsClient } from 'aws4fetch';
 import { getR2Credentials } from '@/lib/cloudflare/env';
 
 // R2 bucket name (should match wrangler.toml)
@@ -59,26 +58,29 @@ export interface PresignedUrlResult {
 }
 
 /**
- * Get or create S3 client for R2
+ * Get or create aws4fetch client for R2
  */
-let s3Client: S3Client | null = null;
+let awsClient: AwsClient | null = null;
+let r2BaseUrl: string | null = null;
 
-async function getS3Client(): Promise<S3Client | null> {
-  if (s3Client) return s3Client;
+async function getAwsClient(): Promise<{ client: AwsClient; baseUrl: string } | null> {
+  if (awsClient && r2BaseUrl) {
+    return { client: awsClient, baseUrl: r2BaseUrl };
+  }
 
   const creds = await getR2Credentials();
   if (!creds) return null;
 
-  s3Client = new S3Client({
+  awsClient = new AwsClient({
+    service: 's3',
     region: 'auto',
-    endpoint: `https://${creds.accountId}.r2.cloudflarestorage.com`,
-    credentials: {
-      accessKeyId: creds.accessKeyId,
-      secretAccessKey: creds.secretAccessKey,
-    },
+    accessKeyId: creds.accessKeyId,
+    secretAccessKey: creds.secretAccessKey,
   });
 
-  return s3Client;
+  r2BaseUrl = `https://${creds.accountId}.r2.cloudflarestorage.com`;
+
+  return { client: awsClient, baseUrl: r2BaseUrl };
 }
 
 /**
@@ -92,8 +94,8 @@ export async function generatePresignedPutUrl(
   sessionId: string,
   file: PresignFileDescriptor
 ): Promise<PresignedUrlResult | null> {
-  const client = await getS3Client();
-  if (!client) return null;
+  const aws = await getAwsClient();
+  if (!aws) return null;
 
   // Validate content type
   if (!ALLOWED_CONTENT_TYPES.has(file.contentType)) {
@@ -108,20 +110,24 @@ export async function generatePresignedPutUrl(
   // Generate R2 key: uploads/pending/{sessionId}/{key}/{filename}
   const r2Key = `uploads/pending/${sessionId}/${file.key}/${file.filename}`;
 
-  const command = new PutObjectCommand({
-    Bucket: R2_BUCKET_NAME,
-    Key: r2Key,
-    ContentType: file.contentType,
-    ContentLength: file.size,
-  });
+  // Build the URL with expiry query param
+  const url = `${aws.baseUrl}/${R2_BUCKET_NAME}/${r2Key}?X-Amz-Expires=${PRESIGN_EXPIRY_SECONDS}`;
 
-  const uploadUrl = await getSignedUrl(client, command, {
-    expiresIn: PRESIGN_EXPIRY_SECONDS,
-  });
+  // Sign the request for PUT
+  const signedRequest = await aws.client.sign(
+    new Request(url, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': file.contentType,
+        'Content-Length': file.size.toString(),
+      },
+    }),
+    { aws: { signQuery: true } }
+  );
 
   return {
     key: file.key,
-    uploadUrl,
+    uploadUrl: signedRequest.url.toString(),
     r2Key,
   };
 }

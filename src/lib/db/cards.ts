@@ -172,7 +172,7 @@ export async function getCards(filters: CardFilters = {}, userId?: string): Prom
   // Get cards
   const query = `
     SELECT c.id, c.slug, c.name, c.description, c.creator, c.creator_notes,
-      c.visibility, c.moderation_state, c.upvotes, c.downvotes, c.favorites_count,
+      c.visibility, c.moderation_state, c.processing_status, c.upvotes, c.downvotes, c.favorites_count,
       c.downloads_count, c.comments_count, c.forks_count, c.uploader_id, c.created_at, c.updated_at,
       c.collection_id, c.collection_item_id,
       v.id as version_id, v.spec_version, v.source_format, v.storage_url,
@@ -229,6 +229,7 @@ export async function getCards(filters: CardFilters = {}, userId?: string): Prom
     hasEmbeddedImages: row.has_embedded_images === 1,
     embeddedImagesCount: row.embedded_images_count,
     visibility: row.visibility,
+    processingStatus: row.processing_status as CardListItem['processingStatus'],
     tags: tagsMap.get(row.id) || [],
     uploader: row.uploader_id ? {
       id: row.uploader_id,

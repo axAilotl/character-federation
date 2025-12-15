@@ -146,10 +146,26 @@ export function CardItem({ card, onQuickView }: CardItemProps) {
 
         {/* Bottom info overlay */}
         <div className="absolute bottom-0 left-0 right-0 p-3">
-          {/* Status badges - NEW / Trending / Following - above character name */}
-          {(isNewCard(card.createdAt) || card.feedReason === 'trending' || card.feedReason === 'followed_user') && (
+          {/* Status badges - Processing / NEW / Trending / Following - above character name */}
+          {(card.processingStatus === 'pending' || card.processingStatus === 'processing' || card.processingStatus === 'failed' ||
+            isNewCard(card.createdAt) || card.feedReason === 'trending' || card.feedReason === 'followed_user') && (
             <div className="flex flex-wrap gap-1 mb-1.5">
-              {isNewCard(card.createdAt) && (
+              {card.processingStatus === 'pending' && (
+                <span className="text-xs px-2 py-0.5 rounded-full bg-yellow-500/90 text-white font-medium animate-pulse">
+                  Uploading...
+                </span>
+              )}
+              {card.processingStatus === 'processing' && (
+                <span className="text-xs px-2 py-0.5 rounded-full bg-blue-500/90 text-white font-medium animate-pulse">
+                  Processing...
+                </span>
+              )}
+              {card.processingStatus === 'failed' && (
+                <span className="text-xs px-2 py-0.5 rounded-full bg-red-500/90 text-white font-medium">
+                  Failed
+                </span>
+              )}
+              {card.processingStatus !== 'pending' && card.processingStatus !== 'processing' && isNewCard(card.createdAt) && (
                 <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-500/90 text-white font-medium">
                   NEW
                 </span>
