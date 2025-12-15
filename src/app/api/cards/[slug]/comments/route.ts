@@ -6,7 +6,8 @@ import { parseBody, CommentSchema } from '@/lib/validations';
 
 /**
  * GET /api/cards/[slug]/comments
- * Get all comments for a card
+ * Get paginated comments for a card
+ * Query params: limit (default 50, max 100), offset (default 0)
  */
 export async function GET(
   request: NextRequest,
@@ -14,6 +15,14 @@ export async function GET(
 ) {
   try {
     const { slug } = await params;
+    const searchParams = request.nextUrl.searchParams;
+
+    // Parse pagination params
+    const limit = Math.min(
+      Math.max(1, parseInt(searchParams.get('limit') || '50', 10) || 50),
+      100
+    );
+    const offset = Math.max(0, parseInt(searchParams.get('offset') || '0', 10) || 0);
 
     // Get card ID from slug
     const db = await getDatabase();
@@ -26,14 +35,17 @@ export async function GET(
       );
     }
 
-    const comments = await getComments(card.id);
+    const result = await getComments(card.id, { limit, offset });
 
     // Organize comments into threaded structure
-    const threadedComments = buildCommentTree(comments);
+    const threadedComments = buildCommentTree(result.comments);
 
     return NextResponse.json({
       comments: threadedComments,
-      total: comments.length,
+      total: result.total,
+      hasMore: result.hasMore,
+      limit,
+      offset,
     });
   } catch (error) {
     console.error('Error fetching comments:', error);
