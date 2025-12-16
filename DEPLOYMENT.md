@@ -17,7 +17,7 @@ feature/* → dev → master
 ## Environments
 
 ### Development (dev branch)
-- **URL**: https://dev.hub.axailotl.ai
+- **URL**: https://hub-dev.axailotl.ai
 - **Worker**: cardshub-dev
 - **D1 Database**: cardshub-db-dev
 - **R2 Bucket**: cardshub-uploads-dev
@@ -61,7 +61,7 @@ feature/* → dev → master
 
 5. **Merge to dev**
    - After CI passes and review (optional for dev)
-   - Automatically deploys to dev.hub.axailotl.ai
+   - Automatically deploys to hub-dev.axailotl.ai
 
 6. **Test on dev environment**
    - Verify the feature works in production-like environment

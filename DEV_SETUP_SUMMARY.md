@@ -14,7 +14,7 @@
 
 ### GitHub Actions Workflows
 - ✅ **ci.yml**: Runs lint, tests, E2E on all PRs to dev/master
-- ✅ **deploy-dev.yml**: Auto-deploys to dev.hub.axailotl.ai on push to dev
+- ✅ **deploy-dev.yml**: Auto-deploys to hub-dev.axailotl.ai on push to dev
 - ✅ **deploy-production.yml**: Auto-deploys to hub.axailotl.ai on push to master
 
 ### NPM Scripts
@@ -72,12 +72,12 @@ CLOUDFLARE_ACCOUNT_ID      - Your Cloudflare account ID
 
 ### 3. Configure Cloudflare Custom Domain (Optional)
 
-To use `dev.hub.axailotl.ai`:
+To use `hub-dev.axailotl.ai`:
 
 1. Go to Cloudflare dashboard → Workers & Pages
 2. Select `cardshub-dev` worker
 3. Click "Triggers" tab
-4. Under "Custom Domains", add: `dev.hub.axailotl.ai`
+4. Under "Custom Domains", add: `hub-dev.axailotl.ai`
 5. DNS will be configured automatically
 
 ### 4. Set Cloudflare Secrets (Dev Environment)
@@ -126,7 +126,7 @@ feature/my-feature → dev → master
 3. Create PR to `dev`
 4. CI runs automatically
 5. Merge to `dev` → auto-deploys to dev environment
-6. Test on dev.hub.axailotl.ai
+6. Test on hub-dev.axailotl.ai
 7. Create PR from `dev` to `master`
 8. Get approval + CI passes
 9. Merge to `master` → auto-deploys to production
@@ -157,7 +157,7 @@ git push origin master
 - [ ] GitHub secrets configured (CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID)
 - [ ] Branch protection enabled for `master` (requires approval)
 - [ ] Branch protection enabled for `dev` (no approval required)
-- [ ] Custom domain `dev.hub.axailotl.ai` configured
+- [ ] Custom domain `hub-dev.axailotl.ai` configured
 - [ ] Cloudflare secrets set for dev environment
 - [ ] Dev database schema initialized
 - [ ] Test deployment to dev works
@@ -180,7 +180,7 @@ git push origin master
 ## Resources
 
 - **Production**: https://hub.axailotl.ai
-- **Dev**: https://dev.hub.axailotl.ai (after domain setup)
+- **Dev**: https://hub-dev.axailotl.ai (after domain setup)
 - **GitHub Actions**: https://github.com/axAilotl/character-federation/actions
 - **Cloudflare Dashboard**: https://dash.cloudflare.com/
 

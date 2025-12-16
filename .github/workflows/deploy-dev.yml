@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: dev
-      url: https://dev.hub.axailotl.ai
+      url: https://hub-dev.axailotl.ai
 
     steps:
       - name: Checkout
@@ -36,4 +36,4 @@ jobs:
       - name: Deployment notification
         run: |
           echo "✅ Deployed to dev environment"
-          echo "🔗 https://dev.hub.axailotl.ai"
+          echo "🔗 https://hub-dev.axailotl.ai"
