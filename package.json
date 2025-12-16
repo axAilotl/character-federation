@@ -16,11 +16,13 @@
     "db:init": "npx tsx scripts/init-db.ts",
     "db:reset": "npx tsx scripts/init-db.ts --reset",
     "admin:reset-pw": "npx tsx scripts/reset-password.ts",
-    "cf:build": "npx opennextjs-cloudflare build",
+    "cf:build": "npx opennextjs-cloudflare build && node scripts/patch-worker.js",
     "cf:deploy": "npx opennextjs-cloudflare deploy",
+    "cf:deploy:dev": "npx opennextjs-cloudflare deploy --env dev",
     "cf:dev": "npx opennextjs-cloudflare dev",
     "cf:d1:create": "wrangler d1 create cardshub-db",
     "cf:d1:migrate": "wrangler d1 execute cardshub-db --file=./src/lib/db/schema.sql",
+    "cf:d1:migrate:dev": "wrangler d1 execute cardshub-db-dev --env dev --file=./src/lib/db/schema.sql",
     "cf:r2:create": "wrangler r2 bucket create cardshub-uploads"
   },
   "dependencies": {

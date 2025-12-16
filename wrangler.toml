@@ -40,6 +40,16 @@ id = "03473e806595491da3811b6820425aff"
 [images]
 binding = "IMAGES"
 
+# Durable Objects for async processing
+[[durable_objects.bindings]]
+name = "IMAGE_PROCESSOR"
+class_name = "ImageProcessor"
+script_name = "cardshub"
+
+[[migrations]]
+tag = "v1"
+new_classes = ["ImageProcessor"]
+
 # Environment variables (set via dashboard or wrangler secret)
 # DISCORD_CLIENT_ID
 # DISCORD_CLIENT_SECRET
@@ -57,7 +67,36 @@ DISCORD_CLIENT_ID = "1446350528568229890"
 [env.development.vars]
 NEXT_PUBLIC_APP_URL = "http://localhost:3000"
 
-# Preview environment
+# Dev environment (for dev branch - testing before production)
+[env.dev]
+name = "cardshub-dev"
+
+[[env.dev.d1_databases]]
+binding = "DB"
+database_name = "cardshub-db-dev"
+database_id = "51735f7f-e7eb-43ed-8e4c-663d18ae529b"
+
+[[env.dev.r2_buckets]]
+binding = "R2"
+bucket_name = "cardshub-uploads-dev"
+
+[[env.dev.kv_namespaces]]
+binding = "CACHE_KV"
+id = "996ed4fd34f54915a8626b0a0589babd"
+
+[env.dev.images]
+binding = "IMAGES"
+
+[[env.dev.durable_objects.bindings]]
+name = "IMAGE_PROCESSOR"
+class_name = "ImageProcessor"
+script_name = "cardshub-dev"
+
+[env.dev.vars]
+NEXT_PUBLIC_APP_URL = "https://dev.hub.axailotl.ai"
+DISCORD_CLIENT_ID = "1446350528568229890"
+
+# Preview environment (for preview deployments)
 [env.preview]
 [[env.preview.d1_databases]]
 binding = "DB"
