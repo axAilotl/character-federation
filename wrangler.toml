@@ -93,7 +93,7 @@ class_name = "ImageProcessor"
 script_name = "cardshub-dev"
 
 [env.dev.vars]
-NEXT_PUBLIC_APP_URL = "https://dev.hub.axailotl.ai"
+NEXT_PUBLIC_APP_URL = "https://hub-dev.axailotl.ai"
 DISCORD_CLIENT_ID = "1446350528568229890"
 
 # Preview environment (for preview deployments)
