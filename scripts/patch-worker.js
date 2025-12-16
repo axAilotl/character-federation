@@ -4,6 +4,7 @@
  * Post-build script to add ImageProcessor Durable Object export to worker.js
  */
 
+/* eslint-disable @typescript-eslint/no-require-imports */
 const fs = require('fs');
 const path = require('path');
 

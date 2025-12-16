@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getCards, createCard, computeContentHash, checkBlockedTags, updateCardVersion } from '@/lib/db/cards';
+import { getCards, createCard, computeContentHash, checkBlockedTags } from '@/lib/db/cards';
 import { parseCard } from '@character-foundry/character-foundry/loader';
 import { isVoxta, readVoxta, voxtaToCCv3, enrichVoxtaAsset, type VoxtaData, type VoxtaBook, type ExtractedVoxtaAsset } from '@character-foundry/character-foundry/voxta';
 import { toUint8Array } from '@character-foundry/character-foundry/core';
 import { countCardTokens } from '@/lib/client/tokenizer';
 import { saveAssets } from '@/lib/image';
-import { processThumbnail, processCardImages } from '@/lib/image/process';
+import { processThumbnail } from '@/lib/image/process';
 import { generateId, generateSlug } from '@/lib/utils';
 import { store, getPublicUrl } from '@/lib/storage';
 import { getSession } from '@/lib/auth';

@@ -32,7 +32,7 @@ function hasExternalImages(cardData: Record<string, unknown>): boolean {
 
 export function CardDetailClient({ card }: CardDetailClientProps) {
   const [activeSection, setActiveSection] = useState<Section>('notes');
-  const [isProcessing, setIsProcessing] = useState(() => hasExternalImages(card.cardData));
+  const [isProcessing] = useState(() => hasExternalImages(card.cardData));
 
   // Auto-trigger image processing if needed
   useEffect(() => {
