@@ -12,8 +12,9 @@ import type { ParseResultWithAssets } from './card-parser';
 // Chunk size (50MB - safe for Workers memory)
 const CHUNK_SIZE = 50 * 1024 * 1024;
 
-// Threshold for using chunked uploads (75MB)
-export const CHUNKED_UPLOAD_THRESHOLD = 75 * 1024 * 1024;
+// Threshold for using chunked uploads (40MB to avoid CF 50MB limit)
+// Use chunked upload for files >=40MB (Cloudflare limit is 50MB, leave headroom for metadata)
+export const CHUNKED_UPLOAD_THRESHOLD = 40 * 1024 * 1024;
 
 export interface ChunkedUploadProgress {
   stage: 'creating' | 'uploading' | 'completing' | 'done' | 'error';
