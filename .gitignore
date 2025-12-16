@@ -36,3 +36,6 @@ test-*.ts
 # internal docs (not for sharing)
 docs/internal/
 e2e/
+# Ignore test artifacts
+test-results/
+playwright-report/
