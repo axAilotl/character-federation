@@ -16,7 +16,6 @@ import {
   type Section,
 } from './components';
 import type { CharacterCardV3 } from '@/types/card';
-import { sanitizeCss } from '@/lib/security/css-sanitizer';
 
 interface CardDetailClientProps {
   card: CardDetail;
@@ -63,54 +62,6 @@ export function CardDetailClient({ card }: CardDetailClientProps) {
            card.tokens.systemPrompt +
            card.tokens.postHistory;
   }, [card.tokens]);
-
-  // Extract and sanitize custom CSS from creator notes (client-only)
-  const processedCreatorNotes = card.cardData.data.creator_notes || card.creatorNotes;
-  const [customCss, setCustomCss] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!processedCreatorNotes) {
-      setCustomCss(null);
-      return;
-    }
-
-    const styleMatch = processedCreatorNotes.match(/<style[^>]*>([\s\S]*?)<\/style>/i);
-    if (!styleMatch) {
-      setCustomCss(null);
-      return;
-    }
-
-    // Sanitize and scope CSS to card page only
-    sanitizeCss(styleMatch[1], {
-      scope: '[data-card-page]',
-      maxSelectors: 300,
-    }).then(sanitized => {
-      setCustomCss(sanitized);
-    }).catch(err => {
-      console.error('CSS sanitization failed:', err);
-      setCustomCss(null);
-    });
-  }, [processedCreatorNotes]);
-
-  // Inject custom CSS that persists across tabs
-  useEffect(() => {
-    if (!customCss) return;
-
-    const styleId = `card-custom-css-${card.id}`;
-    let styleEl = document.getElementById(styleId) as HTMLStyleElement | null;
-
-    if (!styleEl) {
-      styleEl = document.createElement('style');
-      styleEl.id = styleId;
-      document.head.appendChild(styleEl);
-    }
-
-    styleEl.textContent = customCss;
-
-    return () => {
-      styleEl?.remove();
-    };
-  }, [customCss, card.id]);
 
   // Check for assets (V3 cards or saved assets from packages)
   const v3Assets = card.cardData.spec === 'chara_card_v3'
