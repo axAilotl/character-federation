@@ -34,7 +34,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     // thumbs/ - main card thumbnails
     // thumbs/assets/ - asset thumbnails
     // images/ - processed embedded images
-    const isPublicPath = pathKey.startsWith('thumbs/') || pathKey.startsWith('images/');
+    // assets/ - extracted package assets (CharX, Voxta, etc.)
+    const isPublicPath = pathKey.startsWith('thumbs/') || pathKey.startsWith('images/') || pathKey.startsWith('assets/');
 
     // Visibility enforcement - ALWAYS require metadata on Cloudflare/R2 (fail closed)
     // EXCEPT for public processed image paths

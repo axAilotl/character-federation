@@ -287,6 +287,13 @@ CREATE INDEX IF NOT EXISTS idx_uploads_visibility ON uploads(visibility);
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_tags_category ON tags(category);
 CREATE INDEX IF NOT EXISTS idx_reports_status ON reports(status);
+
+-- Settings (key-value store for app configuration)
+CREATE TABLE IF NOT EXISTS settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  updated_at INTEGER DEFAULT (unixepoch())
+);
 CREATE INDEX IF NOT EXISTS idx_reports_card ON reports(card_id);
 
 -- v1.1: Tag Preferences indexes
@@ -328,6 +335,7 @@ INSERT OR IGNORE INTO admin_settings (key, value, description) VALUES
   ('image_cache_enabled', 'true', 'Cache external images at upload time'),
   ('registration_enabled', 'true', 'Allow new user registration'),
   ('uploads_enabled', 'true', 'Allow card uploads'),
+  ('allow_anon_uploads', 'false', 'Allow anonymous users to upload cards without logging in'),
   ('maintenance_mode', 'false', 'Put site in maintenance mode (admin-only access)');
 
 -- Index on trending score for fast ORDER BY

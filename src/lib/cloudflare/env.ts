@@ -5,7 +5,7 @@
  * when running on Cloudflare Workers via OpenNext.
  */
 
-import type { D1Database, R2Bucket, KVNamespace, Fetcher, IncomingRequestCfProperties, ExecutionContext } from '@cloudflare/workers-types';
+import type { D1Database, R2Bucket, KVNamespace, Fetcher, IncomingRequestCfProperties, ExecutionContext, DurableObjectNamespace } from '@cloudflare/workers-types';
 
 // Cloudflare Images binding types
 export interface ImagesTransformOptions {
@@ -57,6 +57,7 @@ export interface CloudflareEnv {
   CACHE_KV: KVNamespace;
   ASSETS: Fetcher;
   IMAGES: ImagesBinding;
+  IMAGE_PROCESSOR: DurableObjectNamespace;
   DISCORD_CLIENT_ID?: string;
   DISCORD_CLIENT_SECRET?: string;
   NEXT_PUBLIC_APP_URL?: string;
@@ -126,6 +127,16 @@ export async function getKV(): Promise<KVNamespace | null> {
 export async function getImages(): Promise<ImagesBinding | null> {
   const ctx = await getCloudflareContext();
   return ctx?.env.IMAGES ?? null;
+}
+
+/**
+ * Get ImageProcessor Durable Object namespace from Cloudflare context
+ * Used for async image processing that survives Worker termination
+ * Returns null on Node.js (Durable Objects only exist on Cloudflare)
+ */
+export async function getImageProcessor(): Promise<DurableObjectNamespace | null> {
+  const ctx = await getCloudflareContext();
+  return ctx?.env.IMAGE_PROCESSOR ?? null;
 }
 
 /**

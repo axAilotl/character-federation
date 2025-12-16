@@ -36,6 +36,8 @@ function sanitizeProfileCSS(css: string): string | null {
 export async function GET() {
   try {
     const session = await getSession();
+    console.log('[/api/users/me GET] Session:', session ? `User ${session.user.id}` : 'None');
+
     if (!session) {
       return NextResponse.json(
         { error: 'Not authenticated' },
@@ -44,6 +46,8 @@ export async function GET() {
     }
 
     const db = await getDatabase();
+    console.log('[/api/users/me GET] Database connection acquired');
+
     const user = await db.prepare(`
       SELECT id, username, display_name, email, avatar_url, bio, profile_css, is_admin, created_at
       FROM users WHERE id = ?
@@ -58,6 +62,8 @@ export async function GET() {
       is_admin: number;
       created_at: number;
     }>(session.user.id);
+
+    console.log('[/api/users/me GET] Query result:', user ? `Found user ${user.username}` : 'No user found');
 
     if (!user) {
       return NextResponse.json(
@@ -78,9 +84,13 @@ export async function GET() {
       createdAt: user.created_at,
     });
   } catch (error) {
-    console.error('Error fetching profile:', error);
+    console.error('[/api/users/me GET] Error:', error);
+    console.error('[/api/users/me GET] Error stack:', error instanceof Error ? error.stack : 'No stack');
     return NextResponse.json(
-      { error: 'Failed to fetch profile' },
+      {
+        error: 'Failed to fetch profile',
+        details: error instanceof Error ? error.message : String(error)
+      },
       { status: 500 }
     );
   }

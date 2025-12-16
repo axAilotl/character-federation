@@ -41,9 +41,11 @@ import {
 export const settingsRegistry = new SettingsRegistry();
 export const widgetRegistry = new WidgetRegistry();
 
-// Note: Tag preferences panel uses TagChipSelector directly rather than through AutoForm,
-// so no custom widgets are registered here. The widget adapter in ./widgets/tag-selector.tsx
-// is available for future use if AutoForm-based tag selection is needed.
+// Register custom styled widgets
+import { SwitchWidget } from './widgets/switch';
+
+widgetRegistry.registerComponent('switch', SwitchWidget);
+widgetRegistry.registerComponent('checkbox', SwitchWidget); // Also register for checkbox alias
 
 // Re-export types for convenience
 export type { SettingsPanel, UIHints };
@@ -62,9 +64,11 @@ settingsRegistry.registerPanel({
   defaultValues: displayPreferencesDefaults,
   uiHints: {
     blurNsfwContent: {
+      widget: 'switch',
       helperText: 'Blur thumbnails and images tagged as NSFW',
     },
     showImagesInGreetings: {
+      widget: 'switch',
       helperText: 'Display embedded images in greeting messages',
     },
     cardSize: {
@@ -76,6 +80,7 @@ settingsRegistry.registerPanel({
       helperText: 'Size of character cards in grids',
     },
     sidebarExpanded: {
+      widget: 'switch',
       helperText: 'Start with sidebar expanded on page load',
     },
   },

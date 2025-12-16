@@ -153,7 +153,7 @@ export async function POST(request: NextRequest) {
 
           for (const asset of nonMainAssets) {
             const assetBuffer = Buffer.from(asset.data as Uint8Array);
-            const assetKey = `uploads/assets/${card.id}/${asset.name}.${asset.ext}`;
+            const assetKey = `assets/${card.id}/${asset.name}.${asset.ext}`;
 
             // Save asset to R2
             await store(assetBuffer, assetKey);

@@ -905,20 +905,10 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // SERVER-SIDE ASYNC: Process embedded images in background (no client involvement)
-    // Downloads external image URLs, converts to WebP, uploads to R2, rewrites URLs in card data
-    // Note: On Cloudflare Workers, this may not complete if Worker terminates before processing finishes
-    // Users can manually trigger reprocessing via /api/cards/[slug]/process-images if needed
-    processCardImages(displayCardData as Record<string, unknown>, cardId)
-      .then(({ displayData, urlMapping }) => {
-        if (urlMapping.size > 0) {
-          console.log(`[AsyncImageProcessing] Processed ${urlMapping.size} embedded images for card ${slug}`);
-          return updateCardVersion(versionId, { cardData: displayData });
-        }
-      })
-      .catch(err => {
-        console.error(`[AsyncImageProcessing] Failed for card ${slug}:`, err);
-      });
+    // NOTE: Image processing disabled temporarily to avoid 503 errors
+    // User can manually trigger processing via /api/cards/[slug]/process-images
+    // Card page will show "processing" state with refresh button
+    console.log(`[ImageProcessing] Card uploaded: ${slug} - processing can be triggered manually`);
 
     // Invalidate listing caches so new card appears in results
     await cacheDeleteByPrefix(CACHE_PREFIX.CARDS);

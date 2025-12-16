@@ -22,8 +22,35 @@ interface CardDetailClientProps {
   card: CardDetail;
 }
 
+// Helper: Check if card data contains external image URLs that need processing
+function hasExternalImages(cardData: Record<string, unknown>): boolean {
+  const jsonStr = JSON.stringify(cardData);
+  // Check for http:// or https:// image URLs (not already processed to r2://)
+  return /https?:\/\/[^\s"']+\.(jpg|jpeg|png|gif|webp|avif)/i.test(jsonStr) &&
+         !jsonStr.includes('r2://'); // If has r2://, processing already done
+}
+
 export function CardDetailClient({ card }: CardDetailClientProps) {
   const [activeSection, setActiveSection] = useState<Section>('notes');
+  const [isProcessing, setIsProcessing] = useState(() => hasExternalImages(card.cardData));
+
+  // Auto-trigger image processing if needed
+  useEffect(() => {
+    if (isProcessing) {
+      // Trigger processing endpoint
+      fetch(`/api/cards/${card.slug}/process-images`, { method: 'POST' })
+        .then(res => res.json())
+        .then(data => {
+          console.log('[ImageProcessing] Processing complete:', data);
+          // Reload page after a short delay to show updated content
+          setTimeout(() => window.location.reload(), 2000);
+        })
+        .catch(err => {
+          console.error('[ImageProcessing] Failed:', err);
+          // Allow manual refresh even if processing failed
+        });
+    }
+  }, [isProcessing, card.slug]);
 
   // Check if card has NSFW tag (for passing to child components)
   const isNsfw = card.tags.some(tag => tag.slug === 'nsfw');
@@ -133,36 +160,67 @@ export function CardDetailClient({ card }: CardDetailClientProps) {
 
       {/* Content */}
       <div className="w-full" data-card-content>
-        <div className="glass rounded-xl p-6" data-card-section={activeSection}>
-          {activeSection === 'notes' && (
-            <NotesSection creatorNotes={card.cardData.data.creator_notes || card.creatorNotes} isNsfw={isNsfw} />
-          )}
+        {isProcessing ? (
+          /* Processing State - Only show message with refresh button */
+          <div className="glass rounded-xl p-12 text-center space-y-6">
+            <div className="space-y-2">
+              <div className="text-2xl font-semibold text-starlight">Server Processing</div>
+              <p className="text-starlight/70 max-w-md mx-auto">
+                This card contains external images that are being downloaded and processed by the server.
+                This may take up to 60 seconds.
+              </p>
+            </div>
 
-          {activeSection === 'character' && (
-            <CharacterSection cardData={card.cardData} tokens={card.tokens} />
-          )}
+            <div className="flex items-center justify-center gap-3">
+              <div className="w-2 h-2 rounded-full bg-nebula animate-pulse" />
+              <div className="w-2 h-2 rounded-full bg-nebula animate-pulse delay-75" />
+              <div className="w-2 h-2 rounded-full bg-nebula animate-pulse delay-150" />
+            </div>
 
-          {activeSection === 'greetings' && (
-            <GreetingsSection
-              firstMessage={card.cardData.data.first_mes}
-              alternateGreetings={card.cardData.data.alternate_greetings}
-              firstMessageTokens={card.tokens.firstMes}
-              isNsfw={isNsfw}
-            />
-          )}
+            <button
+              onClick={() => window.location.reload()}
+              className="btn-primary px-6 py-3 text-lg"
+            >
+              Refresh Page
+            </button>
 
-          {activeSection === 'lorebook' && card.cardData.data.character_book && (
-            <LorebookSection characterBook={card.cardData.data.character_book} />
-          )}
+            <p className="text-sm text-starlight/50">
+              The card content will appear after processing completes
+            </p>
+          </div>
+        ) : (
+          /* Normal State - Show all sections */
+          <div className="glass rounded-xl p-6" data-card-section={activeSection}>
+            {activeSection === 'notes' && (
+              <NotesSection creatorNotes={card.cardData.data.creator_notes || card.creatorNotes} isNsfw={isNsfw} />
+            )}
 
-          {activeSection === 'assets' && hasAssets && (
-            <AssetsSection assets={v3Assets} savedAssets={card.savedAssets} />
-          )}
+            {activeSection === 'character' && (
+              <CharacterSection cardData={card.cardData} tokens={card.tokens} />
+            )}
 
-          {activeSection === 'comments' && (
-            <CommentsSection cardId={card.id} commentsCount={card.commentsCount} />
-          )}
-        </div>
+            {activeSection === 'greetings' && (
+              <GreetingsSection
+                firstMessage={card.cardData.data.first_mes}
+                alternateGreetings={card.cardData.data.alternate_greetings}
+                firstMessageTokens={card.tokens.firstMes}
+                isNsfw={isNsfw}
+              />
+            )}
+
+            {activeSection === 'lorebook' && card.cardData.data.character_book && (
+              <LorebookSection characterBook={card.cardData.data.character_book} />
+            )}
+
+            {activeSection === 'assets' && hasAssets && (
+              <AssetsSection assets={v3Assets} savedAssets={card.savedAssets} />
+            )}
+
+            {activeSection === 'comments' && (
+              <CommentsSection cardId={card.id} commentsCount={card.commentsCount} />
+            )}
+          </div>
+        )}
 
         {/* Uploader Info */}
         {card.uploader && (
