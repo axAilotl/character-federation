@@ -195,13 +195,6 @@ export default function UploadPage() {
         );
 
         if (result.success && result.slug) {
-          // Trigger async image processing (fire-and-forget)
-          fetch(`/api/cards/${result.slug}/process-images`, {
-            method: 'POST',
-          }).catch((err) => {
-            console.error('Failed to trigger async image processing:', err);
-          });
-
           router.push(`/card/${result.slug}`);
         } else {
           throw new Error(result.error || 'Upload failed');
@@ -247,13 +240,6 @@ export default function UploadPage() {
         );
 
         if (result.success && result.slug) {
-          // Trigger async image processing (fire-and-forget)
-          fetch(`/api/cards/${result.slug}/process-images`, {
-            method: 'POST',
-          }).catch((err) => {
-            console.error('Failed to trigger async image processing:', err);
-          });
-
           router.push(`/card/${result.slug}`);
         } else {
           throw new Error(result.error || 'Upload failed');
@@ -341,15 +327,9 @@ export default function UploadPage() {
         xhr.send(formData);
       });
 
-      // Trigger async image processing (fire-and-forget)
-      // This processes embedded images in the background after upload completes
-      const slug = result.data.slug;
-      fetch(`/api/cards/${slug}/process-images`, {
-        method: 'POST',
-      }).catch((err) => {
-        console.error('Failed to trigger async image processing:', err);
-        // Don't block redirect on error
-      });
+      // Note: Embedded image processing happens automatically on the server
+      // External image URLs are downloaded, converted to WebP, uploaded to R2, and URLs rewritten
+      // This takes ~30s in the background - images will update automatically
 
       // Redirect to the new card or collection page
       if (parseState.result.isMultiCharPackage) {
