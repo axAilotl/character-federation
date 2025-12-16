@@ -121,7 +121,7 @@ function toParsedCard(result: ParseResult): ParsedCard {
  * Parse a character card from any supported format (client-side)
  */
 export function parseFromBuffer(buffer: Uint8Array, filename?: string): ParsedCard {
-  const result = parseFromBufferWithAssets(buffer, filename);
+  const result = parseFromBufferWithAssets(buffer);
   return result.card;
 }
 

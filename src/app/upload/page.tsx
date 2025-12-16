@@ -107,7 +107,7 @@ export default function UploadPage() {
 
       // Parse card entirely client-side (dynamic import to avoid SSR bundling issues)
       const { parseFromBufferWithAssets } = await getCardParser();
-      const result = parseFromBufferWithAssets(buffer, selectedFile.name);
+      const result = parseFromBufferWithAssets(buffer);
 
       setParseState({ status: 'parsed', result });
 
