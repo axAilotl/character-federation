@@ -29,4 +29,4 @@ jobs:
       - name: Run tests
         run: npm run test:run
         env:
-          CF_ALLOW_MISSING_FIXTURES: '1'
+          CF_FIXTURES_DIR: ./test-fixtures

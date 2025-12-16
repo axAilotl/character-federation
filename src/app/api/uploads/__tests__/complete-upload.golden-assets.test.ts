@@ -187,7 +187,7 @@ if (!fixturesExist) {
       const mockedStore = store as unknown as ReturnType<typeof vi.fn>;
       const storedAssetCalls = mockedStore.mock.calls.filter((call) => {
         const objectPath = call[1] as string;
-        return typeof objectPath === 'string' && objectPath.startsWith(`uploads/assets/card_test_id/`);
+        return typeof objectPath === 'string' && objectPath.startsWith(`assets/card_test_id/`);
       });
       expect(storedAssetCalls.length).toBe(expectedNonMain.length);
 
@@ -207,7 +207,7 @@ if (!fixturesExist) {
       const sampleOriginalPath = expectedNonMain.find((a) => a.path)?.path;
       expect(sampleOriginalPath).toBeTruthy();
       expect(processedCardData).not.toContain(`embeded://${sampleOriginalPath as string}`);
-      expect(processedCardData).toContain('/api/uploads/uploads/assets/card_test_id/');
+      expect(processedCardData).toContain('/api/uploads/assets/card_test_id/');
     });
   });
 }
