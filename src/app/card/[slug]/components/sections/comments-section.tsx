@@ -5,7 +5,7 @@ interface CommentsSectionProps {
   commentsCount: number;
 }
 
-export function CommentsSection({ cardId, commentsCount }: CommentsSectionProps) {
+export function CommentsSection({ commentsCount }: CommentsSectionProps) {
   return (
     <div className="space-y-4">
       <h2 className="text-xl font-semibold gradient-text">

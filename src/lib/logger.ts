@@ -6,7 +6,6 @@
 
 // Determine environment
 const isProduction = typeof process !== 'undefined' && process.env?.NODE_ENV === 'production';
-const isTest = typeof process !== 'undefined' && (process.env?.NODE_ENV === 'test' || process.env?.VITEST === 'true');
 const logLevel = (typeof process !== 'undefined' && process.env?.LOG_LEVEL) || (isProduction ? 'info' : 'debug');
 
 // Simple logger interface

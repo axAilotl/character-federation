@@ -220,14 +220,14 @@ export default function MyCardsPage() {
       setPage(1);
       fetchCards(1);
     }
-  }, [user, visibilityFilter, sortBy]);
+  }, [user, visibilityFilter, sortBy, fetchCards]);
 
   // Fetch when page changes
   useEffect(() => {
     if (user && page > 1) {
       fetchCards(page);
     }
-  }, [page, fetchCards]);
+  }, [user, page, fetchCards]);
 
   const goToPage = (newPage: number) => {
     if (newPage >= 1 && newPage <= totalPages) {

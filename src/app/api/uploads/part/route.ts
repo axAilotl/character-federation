@@ -23,9 +23,6 @@ import { getDatabase } from '@/lib/db/async-db';
 // Max part size (100MB - R2 limit, but we recommend 50MB chunks)
 const MAX_PART_SIZE = 100 * 1024 * 1024;
 
-// Min part size (5MB - R2 minimum except for last part)
-const MIN_PART_SIZE = 5 * 1024 * 1024;
-
 export async function PUT(request: NextRequest) {
   try {
     // Require authentication

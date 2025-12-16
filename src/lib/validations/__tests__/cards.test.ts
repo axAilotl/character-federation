@@ -126,7 +126,7 @@ describe('CardUploadMetadataSchema', () => {
   });
 
   it('requires name', () => {
-    const { name, ...rest } = validMetadata;
+    const { name, ...rest } = validMetadata;  // eslint-disable-line @typescript-eslint/no-unused-vars
     expect(CardUploadMetadataSchema.safeParse(rest).success).toBe(false);
     expect(CardUploadMetadataSchema.safeParse({ ...validMetadata, name: '' }).success).toBe(false);
   });

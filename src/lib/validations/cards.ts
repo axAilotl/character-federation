@@ -7,7 +7,6 @@ import {
   PaginationSchema,
   CardSortSchema,
   UploadVisibilitySchema,
-  TagArraySchema,
   CommaSeparatedSchema,
   QueryBooleanSchema,
 } from './common';

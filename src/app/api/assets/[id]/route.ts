@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { getUploadById, verifyToken } from '@/lib/db/uploads';
-import { retrieve, getPublicUrl } from '@/lib/storage';
+import { retrieve } from '@/lib/storage';
 import { extname, join } from 'path';
 import { createReadStream, statSync } from 'fs';
 import { Readable } from 'stream';

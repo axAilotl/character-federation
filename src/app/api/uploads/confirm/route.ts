@@ -159,7 +159,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { sessionId, metadata, files, visibility } = parsed.data;
+    const { metadata, files, visibility } = parsed.data;
 
     // Verify original file exists in R2
     const originalObject = await r2.head(files.original.r2Key);

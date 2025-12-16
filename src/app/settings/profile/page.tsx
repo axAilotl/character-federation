@@ -88,6 +88,7 @@ export default function EditProfilePage() {
           <div className="flex items-start gap-4 mb-4">
             <div className="w-20 h-20 rounded-full bg-nebula/30 flex items-center justify-center text-3xl text-starlight flex-shrink-0">
               {profile.avatarUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={profile.avatarUrl}
                   alt={profile.username}

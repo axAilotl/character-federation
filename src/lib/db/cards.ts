@@ -1,5 +1,5 @@
-import { type CardRow, type CardVersionRow, type CardWithVersionRow, type TagRow } from './index';
-import { getDatabase, type AsyncDb } from './async-db';
+import { type CardVersionRow, type CardWithVersionRow, type TagRow } from './index';
+import { getDatabase } from './async-db';
 import type { CardListItem, CardDetail, CardFilters, PaginatedResponse } from '@/types/card';
 import { createHash } from 'crypto';
 import { nanoid } from 'nanoid';
@@ -8,7 +8,6 @@ import {
   cacheSet,
   cardCacheKey,
   cardListCacheKey,
-  invalidateCardCache,
   CACHE_TTL,
 } from '@/lib/cache/kv-cache';
 
@@ -53,7 +52,6 @@ export async function getCards(filters: CardFilters = {}, userId?: string): Prom
     hasLorebook,
     hasEmbeddedImages,
     visibility = ['public'],
-    includeNsfw = false,
   } = filters;
 
   // Only cache anonymous requests (userId = undefined)

@@ -6,7 +6,7 @@
  * - Cloudflare D1 (production) - uses native async API
  */
 
-import type { D1Database, D1PreparedStatement } from '@cloudflare/workers-types';
+import type { D1Database } from '@cloudflare/workers-types';
 
 // Result types
 export interface RunResult {

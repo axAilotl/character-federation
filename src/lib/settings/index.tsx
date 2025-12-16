@@ -96,7 +96,7 @@ export function useSettingsSafe() {
         const parsed = JSON.parse(stored);
         setSettings({ ...defaultSettings, ...parsed });
       }
-    } catch (e) {
+    } catch {
       // Ignore
     }
   }, []);

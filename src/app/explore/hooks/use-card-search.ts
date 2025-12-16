@@ -69,8 +69,8 @@ export function useCardSearch(): UseCardSearchReturn {
 
   // Filter state from URL - sync with URL changes
   const urlSearch = searchParams.get('search') || '';
-  const urlTags = searchParams.get('tags')?.split(',').filter(Boolean) || [];
-  const urlExcludeTags = searchParams.get('excludeTags')?.split(',').filter(Boolean) || [];
+  const urlTags = useMemo(() => searchParams.get('tags')?.split(',').filter(Boolean) || [], [searchParams]);
+  const urlExcludeTags = useMemo(() => searchParams.get('excludeTags')?.split(',').filter(Boolean) || [], [searchParams]);
   const urlSort = (searchParams.get('sort') as SortOption) || 'newest';
   const urlMinTokens = searchParams.get('minTokens') || '';
   const urlHasAltGreetings = searchParams.get('hasAltGreetings') === 'true';
@@ -90,6 +90,8 @@ export function useCardSearch(): UseCardSearchReturn {
   const [hasEmbeddedImages, setHasEmbeddedImages] = useState(urlHasEmbeddedImages);
 
   // Sync state when URL changes (e.g., from external navigation like tag/creator links)
+  const urlTagsKey = urlTags.join(',');
+  const urlExcludeTagsKey = urlExcludeTags.join(',');
   useEffect(() => {
     setSearch(urlSearch);
     setIncludeTags(urlTags);
@@ -100,7 +102,7 @@ export function useCardSearch(): UseCardSearchReturn {
     setHasLorebook(urlHasLorebook);
     setHasEmbeddedImages(urlHasEmbeddedImages);
     setPage(urlPage);
-  }, [urlSearch, urlTags.join(','), urlExcludeTags.join(','), urlSort, urlMinTokens, urlHasAltGreetings, urlHasLorebook, urlHasEmbeddedImages, urlPage]);
+  }, [urlSearch, urlTags, urlExcludeTags, urlTagsKey, urlExcludeTagsKey, urlSort, urlMinTokens, urlHasAltGreetings, urlHasLorebook, urlHasEmbeddedImages, urlPage]);
 
   // Fetch tags on mount
   useEffect(() => {

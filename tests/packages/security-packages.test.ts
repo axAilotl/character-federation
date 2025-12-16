@@ -25,15 +25,12 @@ import {
   fromDataURL,
   isDataURL,
   // Binary utilities
-  toUint8Array,
   fromString,
 } from '@character-foundry/character-foundry/core';
 
 import {
   parseCard,
   detectFormat,
-  type ParseResult,
-  type ContainerFormat,
 } from '@character-foundry/character-foundry/loader';
 
 import {
@@ -45,14 +42,12 @@ import {
   parseSignatureHeader,
   buildSigningString,
   calculateDigest,
-  type ParsedSignature,
 } from '@character-foundry/character-foundry/federation';
 
 import {
   // Token counting (Issue #11 - now implemented)
   countCardTokens,
   countText,
-  type CardTokenCounts,
 } from '@character-foundry/character-foundry/tokenizers';
 
 describe('@character-foundry/core - Error Types', () => {

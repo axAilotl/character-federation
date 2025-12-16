@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { store } from '@/lib/storage';
-import { createUpload, generateToken, hashToken } from '@/lib/db/uploads';
+import { createUpload, generateToken } from '@/lib/db/uploads';
 import { extname } from 'path';
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB

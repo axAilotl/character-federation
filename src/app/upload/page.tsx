@@ -386,6 +386,7 @@ export default function UploadPage() {
             <div className="space-y-4">
               {preview && (
                 <div className="relative w-32 h-32 mx-auto rounded-lg overflow-hidden">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={preview}
                     alt="Preview"

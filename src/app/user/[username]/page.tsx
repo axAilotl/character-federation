@@ -143,14 +143,14 @@ export default function UserProfilePage() {
       setPage(1);
       fetchCards(1);
     }
-  }, [profile, activeTab]);
+  }, [profile, activeTab, fetchCards]);
 
   // Fetch when page changes
   useEffect(() => {
     if (profile && page > 1) {
       fetchCards(page);
     }
-  }, [page, fetchCards]);
+  }, [profile, page, fetchCards]);
 
   const goToPage = (newPage: number) => {
     if (newPage >= 1 && newPage <= totalPages) {
@@ -195,6 +195,7 @@ export default function UserProfilePage() {
             {/* Avatar */}
             <div className="w-24 h-24 rounded-full bg-nebula/30 flex items-center justify-center text-4xl text-starlight flex-shrink-0" data-profile-avatar>
               {profile.avatarUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={profile.avatarUrl}
                   alt={profile.username}

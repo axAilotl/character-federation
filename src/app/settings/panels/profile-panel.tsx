@@ -184,7 +184,7 @@ export function ProfilePanel() {
         withSubmit
         submitText={saving ? 'Saving...' : 'Save Profile'}
       >
-        {({ fields, submit, formState }) => (
+        {({ fields, submit }) => (
           <div className="space-y-4">
             {fields}
 

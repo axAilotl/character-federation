@@ -1,7 +1,7 @@
 /**
  * Client-side card parser using character-foundry packages
  */
-import { parseCard, type ParseResult, type ExtractedAsset as FoundryAsset } from '@character-foundry/character-foundry/loader';
+import { parseCard, type ParseResult } from '@character-foundry/character-foundry/loader';
 import { isVoxta, readVoxta } from '@character-foundry/character-foundry/voxta';
 import { toUint8Array } from '@character-foundry/character-foundry/core';
 import type { CCv3Data, CCv3CharacterBook } from '@character-foundry/character-foundry/schemas';
@@ -128,7 +128,7 @@ export function parseFromBuffer(buffer: Uint8Array, filename?: string): ParsedCa
 /**
  * Parse a character card and extract all binary assets
  */
-export function parseFromBufferWithAssets(buffer: Uint8Array, filename?: string): ParseResultWithAssets {
+export function parseFromBufferWithAssets(buffer: Uint8Array): ParseResultWithAssets {
   const uint8 = toUint8Array(buffer);
 
   // Check for multi-character Voxta package FIRST

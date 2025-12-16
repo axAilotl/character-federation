@@ -162,7 +162,7 @@ export function UserDropdown() {
 
           {/* Menu items */}
           <div className="py-1">
-            {menuItems.map((item, idx) => (
+            {menuItems.map((item) => (
               <div key={item.label}>
                 {item.href ? (
                   <Link

@@ -339,7 +339,6 @@ export function sanitizeCss(css: string, options: CssSanitizeOptions = {}): stri
     // Step 10: Second pass with DOMPurify for defense-in-depth
     // DOMPurify.sanitize() can handle CSS in newer versions
     if (typeof (DOMPurify as any).sanitizeCSS === 'function') {
-      const beforePurify = sanitized;
       sanitized = (DOMPurify as any).sanitizeCSS(sanitized);
     }
 
