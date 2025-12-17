@@ -3,6 +3,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { AppShell } from '@/components/layout';
 import type { CardDetail } from '@/types/card';
+import { buildCardExportFilename } from '@/lib/utils';
 import {
   CardHero,
   SectionTabs,
@@ -147,7 +148,7 @@ export function CardDetailClient({ card }: CardDetailClientProps) {
         };
         ext = extMap[displayCard.sourceFormat] || displayCard.sourceFormat;
       }
-      a.download = `${displayCard.slug}.${ext}`;
+      a.download = buildCardExportFilename(displayCard, ext);
       a.click();
       URL.revokeObjectURL(url);
     }

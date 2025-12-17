@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getCardBySlug, incrementDownloads, getCardVersionById } from '@/lib/db/cards';
 import { isCloudflareRuntime } from '@/lib/db';
 import { getR2 } from '@/lib/cloudflare/env';
+import { buildCardExportFilename } from '@/lib/utils';
 import { embedIntoPNG } from '@character-foundry/character-foundry/png';
 import { toUint8Array } from '@character-foundry/character-foundry/core';
 import { getSession } from '@/lib/auth';
@@ -126,7 +127,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       return new NextResponse(JSON.stringify(card.cardData, null, 2), {
         headers: {
           'Content-Type': 'application/json',
-          'Content-Disposition': `attachment; filename="${card.slug}.json"`,
+          'Content-Disposition': `attachment; filename="${buildCardExportFilename(card, 'json')}"`,
         },
       });
     }
@@ -153,7 +154,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           return new NextResponse(stream.body, {
             headers: {
               'Content-Type': contentType,
-              'Content-Disposition': `attachment; filename="${card.slug}.${ext}"`,
+              'Content-Disposition': `attachment; filename="${buildCardExportFilename(card, ext)}"`,
               ...(typeof stream.size === 'number' ? { 'Content-Length': stream.size.toString() } : {}),
             },
           });
@@ -164,7 +165,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           return new NextResponse(new Uint8Array(fileBuffer), {
             headers: {
               'Content-Type': contentType,
-              'Content-Disposition': `attachment; filename="${card.slug}.${ext}"`,
+              'Content-Disposition': `attachment; filename="${buildCardExportFilename(card, ext)}"`,
             },
           });
         }
@@ -183,7 +184,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           return new NextResponse(stream.body, {
             headers: {
               'Content-Type': 'image/png',
-              'Content-Disposition': `attachment; filename="${card.slug}.png"`,
+              'Content-Disposition': `attachment; filename="${buildCardExportFilename(card, 'png')}"`,
               ...(typeof stream.size === 'number' ? { 'Content-Length': stream.size.toString() } : {}),
             },
           });
@@ -194,7 +195,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           return new NextResponse(new Uint8Array(fileBuffer), {
             headers: {
               'Content-Type': 'image/png',
-              'Content-Disposition': `attachment; filename="${card.slug}.png"`,
+              'Content-Disposition': `attachment; filename="${buildCardExportFilename(card, 'png')}"`,
             },
           });
         }
@@ -230,7 +231,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         return new NextResponse(pngBytes, {
           headers: {
             'Content-Type': 'image/png',
-            'Content-Disposition': `attachment; filename="${card.slug}.png"`,
+            'Content-Disposition': `attachment; filename="${buildCardExportFilename(card, 'png')}"`,
           },
         });
       }
@@ -240,7 +241,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     return new NextResponse(JSON.stringify(card.cardData, null, 2), {
       headers: {
         'Content-Type': 'application/json',
-        'Content-Disposition': `attachment; filename="${card.slug}.json"`,
+        'Content-Disposition': `attachment; filename="${buildCardExportFilename(card, 'json')}"`,
       },
     });
   } catch (error) {

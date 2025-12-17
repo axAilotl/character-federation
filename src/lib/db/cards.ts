@@ -1,4 +1,4 @@
-import { type CardVersionRow, type CardWithVersionRow, type TagRow } from './index';
+import { type CardVersionRow, type CardWithVersionRow, type TagRow, isCloudflareRuntime } from './index';
 import { getDatabase } from './async-db';
 import type { CardListItem, CardDetail, CardFilters, PaginatedResponse } from '@/types/card';
 import { createHash } from 'crypto';
@@ -85,7 +85,8 @@ export async function getCards(filters: CardFilters = {}, userId?: string): Prom
   let useFts = false;
   if (search && search.trim()) {
     const searchTerm = search.trim();
-    if (searchTerm.length >= 2) {
+    const canUseFts = !isCloudflareRuntime(); // D1 doesn't support FTS5
+    if (canUseFts && searchTerm.length >= 2) {
       useFts = true;
       const ftsQuery = searchTerm
         .replace(/[\"\']/g, '')
