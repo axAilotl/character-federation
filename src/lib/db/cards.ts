@@ -17,34 +17,46 @@ const getDb = getDatabase;
 // FTS functions - work on both local SQLite and Cloudflare D1
 async function updateFtsIndexAsync(cardId: string, name: string, description: string | null, creator: string | null, creatorNotes: string | null): Promise<void> {
   try {
-    const { updateFtsIndex } = await import('./index');
-    await updateFtsIndex(cardId, name, description, creator, creatorNotes);
+    const db = await getDb();
+    const ftsAvailable = await isCardsFtsAvailableAsync(db);
+    if (!ftsAvailable) return;
+
+    await db.batch([
+      { sql: 'DELETE FROM cards_fts WHERE card_id = ?', params: [cardId] },
+      {
+        sql: 'INSERT INTO cards_fts(card_id, name, description, creator, creator_notes) VALUES (?, ?, ?, ?, ?)',
+        params: [cardId, name, description || '', creator || '', creatorNotes || ''],
+      },
+    ]);
   } catch (error) {
-    console.error('[FTS] Failed to update index:', error);
+    console.debug('[FTS] update index skipped:', error);
   }
 }
 
 async function removeFtsIndexAsync(cardId: string): Promise<void> {
   try {
-    const { removeFtsIndex } = await import('./index');
-    await removeFtsIndex(cardId);
+    const db = await getDb();
+    const ftsAvailable = await isCardsFtsAvailableAsync(db);
+    if (!ftsAvailable) return;
+
+    await db.prepare('DELETE FROM cards_fts WHERE card_id = ?').run(cardId);
   } catch (error) {
-    console.error('[FTS] Failed to remove index:', error);
+    console.debug('[FTS] remove index skipped:', error);
   }
 }
 
-let cachedCardsFtsAvailable: boolean | null = null;
+let cachedCardsFtsAvailable = false;
 async function isCardsFtsAvailableAsync(db: Awaited<ReturnType<typeof getDb>>): Promise<boolean> {
-  if (cachedCardsFtsAvailable !== null) return cachedCardsFtsAvailable;
+  if (cachedCardsFtsAvailable) return true;
 
   try {
     const row = await db
       .prepare(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'cards_fts' LIMIT 1`)
       .get<{ sql: string }>();
-    cachedCardsFtsAvailable = !!row?.sql && /fts5/i.test(row.sql);
-    return cachedCardsFtsAvailable;
+    const available = !!row?.sql && /fts5/i.test(row.sql);
+    if (available) cachedCardsFtsAvailable = true;
+    return available;
   } catch {
-    cachedCardsFtsAvailable = false;
     return false;
   }
 }
