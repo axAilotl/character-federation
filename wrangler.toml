@@ -57,6 +57,7 @@ new_classes = ["ImageProcessor"]
 [vars]
 NEXT_PUBLIC_APP_URL = "https://hub.axailotl.ai"
 DISCORD_CLIENT_ID = "1446350528568229890"
+R2_BUCKET_NAME = "cardshub-uploads"
 # Secrets set via wrangler secret:
 # DISCORD_CLIENT_SECRET
 # R2_ACCESS_KEY_ID - R2 API token access key for presigned URLs
@@ -95,6 +96,7 @@ script_name = "cardshub-dev"
 [env.dev.vars]
 NEXT_PUBLIC_APP_URL = "https://hub-dev.axailotl.ai"
 DISCORD_CLIENT_ID = "1446350528568229890"
+R2_BUCKET_NAME = "cardshub-uploads-dev"
 
 # Preview environment (for preview deployments)
 [env.preview]
@@ -106,3 +108,6 @@ database_id = "b81d49dc-a3e8-4be2-9fbe-835e4046deaf"
 [[env.preview.r2_buckets]]
 binding = "R2"
 bucket_name = "cardshub-uploads-preview"
+
+[env.preview.vars]
+R2_BUCKET_NAME = "cardshub-uploads-preview"

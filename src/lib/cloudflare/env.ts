@@ -61,6 +61,7 @@ export interface CloudflareEnv {
   DISCORD_CLIENT_ID?: string;
   DISCORD_CLIENT_SECRET?: string;
   NEXT_PUBLIC_APP_URL?: string;
+  R2_BUCKET_NAME?: string;
   // R2 presigned URL credentials
   R2_ACCESS_KEY_ID?: string;
   R2_SECRET_ACCESS_KEY?: string;
@@ -206,6 +207,20 @@ export async function getR2Credentials(): Promise<{
       accountId: String(cfAccountId),
     };
   }
+
+  return null;
+}
+
+/**
+ * Get R2 bucket name for S3-compatible presigned URLs
+ */
+export async function getR2BucketName(): Promise<string | null> {
+  const bucketName = process.env.R2_BUCKET_NAME;
+  if (bucketName) return bucketName;
+
+  const ctx = await getCloudflareContext();
+  const cfBucketName = ctx?.env.R2_BUCKET_NAME;
+  if (cfBucketName) return String(cfBucketName);
 
   return null;
 }

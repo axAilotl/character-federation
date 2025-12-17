@@ -49,7 +49,7 @@ const FileDescriptorSchema = z.object({
 
 const PresignRequestSchema = z.object({
   sessionId: z.string().uuid(),
-  files: z.array(FileDescriptorSchema).min(1).max(50),
+  files: z.array(FileDescriptorSchema).min(1).max(250),
 });
 
 export async function POST(request: NextRequest) {
@@ -96,7 +96,7 @@ export async function POST(request: NextRequest) {
 
     // Check total size doesn't exceed reasonable limit
     const totalSize = files.reduce((sum, f) => sum + f.size, 0);
-    const MAX_TOTAL_SIZE = 100 * 1024 * 1024; // 100MB total per session
+    const MAX_TOTAL_SIZE = 1024 * 1024 * 1024; // 1GB total per session
     if (totalSize > MAX_TOTAL_SIZE) {
       return NextResponse.json(
         { error: `Total upload size exceeds limit (${Math.round(MAX_TOTAL_SIZE / 1024 / 1024)}MB)` },

@@ -6,16 +6,14 @@
  */
 
 import { AwsClient } from 'aws4fetch';
-import { getR2Credentials } from '@/lib/cloudflare/env';
-
-// R2 bucket name (should match wrangler.toml)
-const R2_BUCKET_NAME = 'cardshub-uploads';
+import { getR2BucketName, getR2Credentials } from '@/lib/cloudflare/env';
 
 // Presigned URL expiration (1 hour)
 const PRESIGN_EXPIRY_SECONDS = 3600;
 
-// Max file size for uploads (50MB - Cloudflare limit)
-export const MAX_UPLOAD_SIZE = 50 * 1024 * 1024;
+// Max file size for presigned uploads (client uploads directly to R2, not via Worker body)
+// Keep this reasonably bounded since presign is an authenticated endpoint.
+export const MAX_UPLOAD_SIZE = 1024 * 1024 * 1024; // 1GB
 
 // Allowed content types
 export const ALLOWED_CONTENT_TYPES = new Set([
@@ -62,14 +60,18 @@ export interface PresignedUrlResult {
  */
 let awsClient: AwsClient | null = null;
 let r2BaseUrl: string | null = null;
+let r2BucketName: string | null = null;
 
-async function getAwsClient(): Promise<{ client: AwsClient; baseUrl: string } | null> {
-  if (awsClient && r2BaseUrl) {
-    return { client: awsClient, baseUrl: r2BaseUrl };
+async function getAwsClient(): Promise<{ client: AwsClient; baseUrl: string; bucketName: string } | null> {
+  if (awsClient && r2BaseUrl && r2BucketName) {
+    return { client: awsClient, baseUrl: r2BaseUrl, bucketName: r2BucketName };
   }
 
   const creds = await getR2Credentials();
   if (!creds) return null;
+
+  const bucketName = await getR2BucketName();
+  if (!bucketName) return null;
 
   awsClient = new AwsClient({
     service: 's3',
@@ -79,8 +81,9 @@ async function getAwsClient(): Promise<{ client: AwsClient; baseUrl: string } | 
   });
 
   r2BaseUrl = `https://${creds.accountId}.r2.cloudflarestorage.com`;
+  r2BucketName = bucketName;
 
-  return { client: awsClient, baseUrl: r2BaseUrl };
+  return { client: awsClient, baseUrl: r2BaseUrl, bucketName: bucketName };
 }
 
 /**
@@ -111,7 +114,9 @@ export async function generatePresignedPutUrl(
   const r2Key = `uploads/pending/${sessionId}/${file.key}/${file.filename}`;
 
   // Build the URL with expiry query param
-  const url = `${aws.baseUrl}/${R2_BUCKET_NAME}/${r2Key}?X-Amz-Expires=${PRESIGN_EXPIRY_SECONDS}`;
+  // Encode key segments so spaces and special chars don't break the request
+  const encodedKey = r2Key.split('/').map(encodeURIComponent).join('/');
+  const url = `${aws.baseUrl}/${encodeURIComponent(aws.bucketName)}/${encodedKey}?X-Amz-Expires=${PRESIGN_EXPIRY_SECONDS}`;
 
   // Sign the request for PUT
   const signedRequest = await aws.client.sign(
@@ -119,7 +124,6 @@ export async function generatePresignedPutUrl(
       method: 'PUT',
       headers: {
         'Content-Type': file.contentType,
-        'Content-Length': file.size.toString(),
       },
     }),
     { aws: { signQuery: true } }
@@ -164,7 +168,8 @@ export async function generatePresignedPutUrls(
  */
 export async function isPresignAvailable(): Promise<boolean> {
   const creds = await getR2Credentials();
-  return creds !== null;
+  const bucketName = await getR2BucketName();
+  return creds !== null && !!bucketName;
 }
 
 /**
@@ -186,8 +191,9 @@ export async function movePendingToPermanent(
   if (!object) throw new Error(`Pending file not found: ${pendingKey}`);
 
   // Copy to permanent location
-  const data = await object.arrayBuffer();
-  await r2.put(permanentKey, data, {
+  if (!object.body) throw new Error(`Pending file missing body: ${pendingKey}`);
+
+  await r2.put(permanentKey, object.body, {
     httpMetadata: object.httpMetadata,
     customMetadata: object.customMetadata,
   });

@@ -26,7 +26,7 @@
     "cf:r2:create": "wrangler r2 bucket create cardshub-uploads"
   },
   "dependencies": {
-    "@character-foundry/character-foundry": "^0.1.9-dev.1765932375",
+    "@character-foundry/character-foundry": "^0.4.0",
     "@hookform/resolvers": "^3.10.0",
     "@opennextjs/cloudflare": "^1.0.0",
     "aws4fetch": "^1.0.20",
