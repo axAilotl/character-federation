@@ -1,15 +1,52 @@
 'use client';
 
-import { useState, useCallback, useRef } from 'react';
-import { Button } from '@/components/ui';
+import { useEffect, useState, useCallback, useRef } from 'react';
+import { Button, Select } from '@/components/ui';
+import type { ParseResultWithAssets } from '@/lib/client/card-parser';
+import type { UploadProgress } from '@/lib/client/presigned-upload';
+
+// Dynamic imports to avoid SSR bundling issues
+const getCardParser = () => import('@/lib/client/card-parser');
+const getPresignedUpload = () => import('@/lib/client/presigned-upload');
+
+type CardVisibility = 'public' | 'private' | 'unlisted';
+const VISIBILITY_OPTIONS: { value: CardVisibility; label: string }[] = [
+  { value: 'public', label: 'Public' },
+  { value: 'unlisted', label: 'Unlisted' },
+  { value: 'private', label: 'Private' },
+];
+
+type UploadStatus =
+  | 'pending'
+  | 'parsing'
+  | 'presigning'
+  | 'uploading'
+  | 'confirming'
+  | 'success'
+  | 'error';
 
 interface UploadItem {
   id: string;
   file: File;
-  status: 'pending' | 'uploading' | 'success' | 'error';
+  status: UploadStatus;
+  progress?: number;
+  currentFile?: string;
   error?: string;
-  cardName?: string;
+  displayName?: string;
   slug?: string;
+  resultType?: 'card' | 'collection';
+}
+
+function formatBytes(bytes: number): string {
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'] as const;
+  let value = bytes;
+  let unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex++;
+  }
+  const decimals = unitIndex === 0 ? 0 : 1;
+  return `${value.toFixed(decimals)} ${units[unitIndex]}`;
 }
 
 export default function BulkUploadPage() {
@@ -17,6 +54,33 @@ export default function BulkUploadPage() {
   const [isUploading, setIsUploading] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [visibility, setVisibility] = useState<CardVisibility>('public');
+  const [assetPreviewsEnabled, setAssetPreviewsEnabled] = useState<boolean>(false);
+  const [includeAssetPreviews, setIncludeAssetPreviews] = useState<boolean>(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/config/features');
+        if (!res.ok) return;
+        const data = (await res.json()) as { assetPreviewsEnabled?: boolean };
+        if (cancelled) return;
+        const enabled = !!data.assetPreviewsEnabled;
+        setAssetPreviewsEnabled(enabled);
+        if (!enabled) setIncludeAssetPreviews(false);
+      } catch {
+        // Ignore - fail closed (treat as disabled)
+        if (!cancelled) {
+          setAssetPreviewsEnabled(false);
+          setIncludeAssetPreviews(false);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handleFiles = useCallback((files: FileList | File[]) => {
     const validExtensions = ['.png', '.json', '.charx', '.voxpkg'];
@@ -27,7 +91,7 @@ export default function BulkUploadPage() {
         file.name.toLowerCase().endsWith(ext)
       );
 
-      if (hasValidExtension && file.size <= 50 * 1024 * 1024) {
+      if (hasValidExtension) {
         newItems.push({
           id: crypto.randomUUID(),
           file,
@@ -60,29 +124,64 @@ export default function BulkUploadPage() {
 
   const uploadSingle = async (item: UploadItem): Promise<void> => {
     setItems(prev => prev.map(i =>
-      i.id === item.id ? { ...i, status: 'uploading' } : i
+      i.id === item.id ? { ...i, status: 'parsing', progress: 0, currentFile: undefined, error: undefined } : i
     ));
 
     try {
-      const formData = new FormData();
-      formData.append('file', item.file);
-      formData.append('visibility', 'public');
+      const arrayBuffer = await item.file.arrayBuffer();
+      const buffer = new Uint8Array(arrayBuffer);
 
-      const response = await fetch('/api/cards', {
-        method: 'POST',
-        body: formData,
-      });
+      const { parseFromBufferWithAssets, computeContentHash } = await getCardParser();
+      const parseResult: ParseResultWithAssets = parseFromBufferWithAssets(buffer, item.file.name);
+      const contentHash = await computeContentHash(buffer);
 
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || 'Upload failed');
+      const inferredName = parseResult.isMultiCharPackage
+        ? (parseResult.packageName || item.file.name)
+        : (parseResult.card.name || item.file.name);
+
+      setItems(prev => prev.map(i =>
+        i.id === item.id ? { ...i, displayName: inferredName } : i
+      ));
+
+      const { uploadWithPresignedUrls } = await getPresignedUpload();
+
+      const shouldIncludeAssetPreviews =
+        assetPreviewsEnabled &&
+        includeAssetPreviews &&
+        !parseResult.isMultiCharPackage &&
+        (parseResult.extractedAssets?.length || 0) > 0;
+
+      const result = await uploadWithPresignedUrls(
+        item.file,
+        parseResult,
+        visibility,
+        contentHash,
+        { includeAssetPreviews: shouldIncludeAssetPreviews },
+        (progress: UploadProgress) => {
+          setItems(prev => prev.map(i => {
+            if (i.id !== item.id) return i;
+            if (progress.stage === 'error') {
+              return { ...i, status: 'error', error: progress.error || 'Upload failed' };
+            }
+            const status: UploadStatus = progress.stage === 'done' ? 'confirming' : progress.stage;
+            return { ...i, status, progress: progress.percent, currentFile: progress.currentFile };
+          }));
+        }
+      );
+
+      if (!result.success || !result.slug) {
+        throw new Error(result.error || 'Upload failed');
       }
-
-      const data = await response.json();
 
       setItems(prev => prev.map(i =>
         i.id === item.id
-          ? { ...i, status: 'success', cardName: data.data?.name, slug: data.data?.slug }
+          ? {
+              ...i,
+              status: 'success',
+              progress: 100,
+              slug: result.slug,
+              resultType: result.isCollection ? 'collection' : 'card',
+            }
           : i
       ));
     } catch (err) {
@@ -128,7 +227,7 @@ export default function BulkUploadPage() {
         <div>
           <h1 className="text-2xl font-bold text-starlight">Bulk Upload</h1>
           <p className="text-starlight/60 text-sm mt-1">
-            Upload multiple character cards at once for testing
+            Upload multiple character cards at once for testing (direct-to-R2; keep this tab open)
           </p>
         </div>
         <div className="flex gap-2">
@@ -143,6 +242,42 @@ export default function BulkUploadPage() {
             </Button>
           )}
         </div>
+      </div>
+
+      <div className="mb-6 glass rounded-lg p-4 border border-nebula/20 space-y-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Select
+            label="Visibility"
+            value={visibility}
+            onChange={(e) => setVisibility(e.target.value as CardVisibility)}
+            options={VISIBILITY_OPTIONS}
+          />
+          <div>
+            <label className="block text-sm font-medium text-starlight/80 mb-1.5">
+              Preview Assets
+            </label>
+            <label className="flex items-start gap-2 text-sm text-starlight/70">
+              <input
+                type="checkbox"
+                checked={includeAssetPreviews}
+                disabled={!assetPreviewsEnabled || isUploading}
+                onChange={(e) => setIncludeAssetPreviews(e.target.checked)}
+                className="mt-0.5 rounded border-nebula/30"
+              />
+              <span>
+                Include preview assets (slower). Auto-disabled for multi-character Voxta packages.
+                {!assetPreviewsEnabled && (
+                  <span className="block text-xs text-starlight/50 mt-1">
+                    Disabled by admin setting: <span className="font-mono">asset_previews_enabled</span>
+                  </span>
+                )}
+              </span>
+            </label>
+          </div>
+        </div>
+        <p className="text-xs text-starlight/50">
+          For large packages, parsing + uploads can take a while. Please wait until the list shows success/error.
+        </p>
       </div>
 
       {/* Drop zone */}
@@ -175,7 +310,7 @@ export default function BulkUploadPage() {
           Drag and drop character card files here
         </p>
         <p className="text-starlight/50 text-sm mb-4">
-          PNG, JSON, CharX, Voxta (max 50MB each)
+          PNG, JSON, CharX, Voxta (no size limit; uploaded directly to R2)
         </p>
 
         <Button
@@ -222,13 +357,13 @@ export default function BulkUploadPage() {
                 ${item.status === 'uploading' ? 'glass border border-nebula/50' : ''}
               `}
             >
-              <div className="flex items-center gap-3 min-w-0">
+                <div className="flex items-center gap-3 min-w-0">
                 {/* Status icon */}
                 <div className="flex-shrink-0">
                   {item.status === 'pending' && (
                     <div className="w-5 h-5 rounded-full border-2 border-starlight/30" />
                   )}
-                  {item.status === 'uploading' && (
+                  {['parsing', 'presigning', 'uploading', 'confirming'].includes(item.status) && (
                     <svg className="w-5 h-5 animate-spin text-nebula" fill="none" viewBox="0 0 24 24">
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
@@ -249,37 +384,43 @@ export default function BulkUploadPage() {
                 {/* File info */}
                 <div className="min-w-0">
                   <p className="text-starlight truncate">
-                    {item.status === 'success' && item.cardName
-                      ? item.cardName
+                    {item.displayName
+                      ? item.displayName
                       : item.file.name
                     }
                   </p>
                   <p className="text-xs text-starlight/50">
                     {item.status === 'success' && item.slug && (
                       <a
-                        href={`/card/${item.slug}`}
+                        href={item.resultType === 'collection' ? `/collection/${item.slug}` : `/card/${item.slug}`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-nebula hover:underline"
                       >
-                        View card →
+                        View {item.resultType === 'collection' ? 'collection' : 'card'} →
                       </a>
                     )}
                     {item.status === 'error' && (
                       <span className="text-red-400">{item.error}</span>
                     )}
                     {item.status === 'pending' && (
-                      <span>{(item.file.size / 1024 / 1024).toFixed(2)} MB</span>
+                      <span>{formatBytes(item.file.size)}</span>
                     )}
-                    {item.status === 'uploading' && (
-                      <span className="text-nebula">Uploading...</span>
+                    {['parsing', 'presigning', 'uploading', 'confirming'].includes(item.status) && (
+                      <span className="text-nebula">
+                        {item.status === 'parsing' && 'Parsing…'}
+                        {item.status === 'presigning' && `Presigning… ${item.progress ?? 0}%`}
+                        {item.status === 'uploading' && `Uploading… ${item.progress ?? 0}%`}
+                        {item.status === 'confirming' && `Confirming… ${item.progress ?? 0}%`}
+                        {item.currentFile ? ` (${item.currentFile})` : ''}
+                      </span>
                     )}
                   </p>
                 </div>
               </div>
 
               {/* Remove button */}
-              {item.status !== 'uploading' && (
+              {!['parsing', 'presigning', 'uploading', 'confirming'].includes(item.status) && (
                 <button
                   onClick={() => removeItem(item.id)}
                   className="flex-shrink-0 p-1 text-starlight/50 hover:text-starlight transition-colors"
