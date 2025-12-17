@@ -4,19 +4,19 @@ import { useState } from 'react';
 import { Badge } from '@/components/ui';
 
 interface LorebookEntry {
-  keys: string[];
-  content: string;
-  enabled?: boolean;
-  name?: string;
-  comment?: string;
-  insertion_order?: number;
+  keys?: string[] | null;
+  content?: string | null;
+  enabled?: boolean | null;
+  name?: string | null;
+  comment?: string | null;
+  insertion_order?: number | null;
 }
 
 interface CharacterBook {
-  name?: string;
-  scan_depth?: number;
-  token_budget?: number;
-  recursive_scanning?: boolean;
+  name?: string | null;
+  scan_depth?: number | null;
+  token_budget?: number | null;
+  recursive_scanning?: boolean | null;
   entries: LorebookEntry[];
 }
 
@@ -41,19 +41,19 @@ export function LorebookSection({ characterBook }: LorebookSectionProps) {
 
       {/* Lorebook metadata */}
       <div className="flex flex-wrap gap-4 text-xs text-starlight/60 mb-4">
-        {characterBook.scan_depth !== undefined && (
+        {characterBook.scan_depth != null && (
           <div>
             <span className="text-starlight/40">Scan Depth:</span>{' '}
             <span>{characterBook.scan_depth}</span>
           </div>
         )}
-        {characterBook.token_budget !== undefined && (
+        {characterBook.token_budget != null && (
           <div>
             <span className="text-starlight/40">Token Budget:</span>{' '}
             <span>{characterBook.token_budget}</span>
           </div>
         )}
-        {characterBook.recursive_scanning !== undefined && (
+        {characterBook.recursive_scanning != null && (
           <div>
             <span className="text-starlight/40">Recursive:</span>{' '}
             <span>{characterBook.recursive_scanning ? 'Yes' : 'No'}</span>
@@ -72,7 +72,8 @@ export function LorebookSection({ characterBook }: LorebookSectionProps) {
             </div>
             <div className="overflow-y-auto max-h-[360px]">
               {characterBook.entries.map((entry, index) => {
-                const displayName = entry.comment || entry.name || entry.keys.join(', ') || `Entry ${index + 1}`;
+                const keyLabel = entry.keys && entry.keys.length > 0 ? entry.keys.join(', ') : '';
+                const displayName = entry.comment || entry.name || keyLabel || `Entry ${index + 1}`;
                 const isSelected = selectedIndex === index;
 
                 return (
@@ -116,7 +117,7 @@ export function LorebookSection({ characterBook }: LorebookSectionProps) {
                   ) : (
                     <Badge variant="success" size="sm">Enabled</Badge>
                   )}
-                  {selectedEntry.insertion_order !== undefined && (
+                  {selectedEntry.insertion_order != null && (
                     <span className="text-xs text-starlight/40">
                       Order: {selectedEntry.insertion_order}
                     </span>
@@ -127,7 +128,7 @@ export function LorebookSection({ characterBook }: LorebookSectionProps) {
                 <div>
                   <span className="text-xs text-starlight/40 uppercase block mb-2">Keys</span>
                   <div className="flex flex-wrap gap-2">
-                    {selectedEntry.keys.map((key, i) => (
+                    {(selectedEntry.keys || []).map((key, i) => (
                       <Badge key={i} variant="info" size="sm">{key}</Badge>
                     ))}
                   </div>
@@ -137,7 +138,7 @@ export function LorebookSection({ characterBook }: LorebookSectionProps) {
                 <div>
                   <span className="text-xs text-starlight/40 uppercase block mb-2">Content</span>
                   <pre className="whitespace-pre-wrap text-sm text-starlight/70 bg-deep-space/50 p-4 rounded-lg">
-                    {selectedEntry.content}
+                    {selectedEntry.content || ''}
                   </pre>
                 </div>
               </div>

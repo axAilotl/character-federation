@@ -63,7 +63,10 @@ async function maybeTranscodeImageToWebp(asset: PreparedAsset): Promise<Prepared
   }
 
   try {
-    const inputBlob = new Blob([asset.buffer], { type: asset.contentType });
+    // TS: BlobPart expects ArrayBuffer-backed views (not SharedArrayBuffer).
+    // Copy into a fresh Uint8Array<ArrayBuffer> to keep Next.js type-check happy.
+    const inputBytes = new Uint8Array(asset.buffer);
+    const inputBlob = new Blob([inputBytes], { type: asset.contentType });
     const bitmap = await createImageBitmap(inputBlob);
 
     const maxDim = 768;
@@ -246,7 +249,7 @@ export async function uploadWithPresignedUrls(
           percent: Math.round((uploadedFiles / totalFiles) * 100),
           currentFile: `${asset.name}.${asset.ext}`,
         });
-        const assetBlob = new Blob([asset.buffer], { type: asset.contentType });
+        const assetBlob = new Blob([new Uint8Array(asset.buffer)], { type: asset.contentType });
         await uploadToR2(assetUrl.uploadUrl, assetBlob, asset.contentType);
         uploadedFiles++;
         onProgress?.({ stage: 'uploading', percent: Math.round((uploadedFiles / totalFiles) * 100) });

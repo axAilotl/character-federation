@@ -129,7 +129,8 @@ function toParsedCardFromCcv3(raw: CCv3Data, sourceFormat: SourceFormat): Parsed
 
   return {
     raw,
-    specVersion: raw.spec === 'chara_card_v2' ? 'v2' : 'v3',
+    // The loader normalizes all cards into CCv3 shape; container-origin spec is tracked separately.
+    specVersion: 'v3',
     sourceFormat,
     name: data.name || 'Unknown',
     description: data.description || '',

@@ -60,7 +60,9 @@ export async function GET(
         .slice(0, 100);
       const filename = `${safeName}.voxpkg`;
 
-      return new NextResponse(object.body, {
+      // Cloudflare's `@cloudflare/workers-types` declares its own ReadableStream type which isn't
+      // assignable to the DOM lib ReadableStream type NextResponse expects. Runtime-compatible.
+      return new NextResponse(object.body as unknown as ReadableStream<Uint8Array>, {
         headers: {
           'Content-Type': 'application/octet-stream',
           'Content-Disposition': `attachment; filename="${filename}"`,

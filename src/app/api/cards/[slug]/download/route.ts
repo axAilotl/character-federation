@@ -76,7 +76,9 @@ async function getFileFromStorage(storagePath: string): Promise<Buffer | null> {
 /**
  * Stream file from storage (Cloudflare/R2 only)
  */
-async function getFileStreamFromStorage(storagePath: string): Promise<{ body: ReadableStream; size?: number } | null> {
+async function getFileStreamFromStorage(
+  storagePath: string
+): Promise<{ body: ReadableStream<Uint8Array>; size?: number } | null> {
   if (!isCloudflareRuntime()) return null;
   const r2 = await getR2();
   if (!r2) return null;
@@ -85,7 +87,9 @@ async function getFileStreamFromStorage(storagePath: string): Promise<{ body: Re
   const object = await r2.get(key);
   if (!object?.body) return null;
 
-  return { body: object.body, size: object.size };
+  // Cloudflare's `@cloudflare/workers-types` declares its own ReadableStream type which isn't
+  // assignable to the DOM lib ReadableStream type NextResponse expects. Runtime-compatible.
+  return { body: object.body as unknown as ReadableStream<Uint8Array>, size: object.size };
 }
 
 export async function GET(request: NextRequest, { params }: RouteParams) {

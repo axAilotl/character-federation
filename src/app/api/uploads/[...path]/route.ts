@@ -84,7 +84,9 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         return NextResponse.json({ error: 'Failed to stream file' }, { status: 500 });
       }
 
-      return new NextResponse(object.body, {
+      // Cloudflare's `@cloudflare/workers-types` declares its own ReadableStream type which isn't
+      // assignable to the DOM lib ReadableStream type NextResponse expects. Runtime-compatible.
+      return new NextResponse(object.body as unknown as ReadableStream<Uint8Array>, {
         headers: {
           'Content-Type': contentType,
           'Cache-Control': meta?.visibility === 'private'
