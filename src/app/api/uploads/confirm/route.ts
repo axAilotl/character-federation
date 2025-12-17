@@ -34,16 +34,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { z } from 'zod';
 import { getR2 } from '@/lib/cloudflare/env';
-import { createCard, checkBlockedTags, computeContentHash } from '@/lib/db/cards';
+import { createCard, checkBlockedTags } from '@/lib/db/cards';
 import { processThumbnail } from '@/lib/image/process';
 import { generateId, generateSlug } from '@/lib/utils';
 import { isCloudflareRuntime } from '@/lib/db';
 import { getPublicUrl } from '@/lib/storage';
 import { cacheDeleteByPrefix, CACHE_PREFIX } from '@/lib/cache/kv-cache';
-import { parseCard } from '@character-foundry/character-foundry/loader';
-import { toUint8Array } from '@character-foundry/character-foundry/core';
-import { countCardTokens } from '@/lib/client/tokenizer';
-import { extractCardMetadata } from '@/lib/card-metadata';
+import { createCollection, generateCollectionSlug, getCollectionByPackageId } from '@/lib/db/collections';
 
 // Token counts schema
 const TokensSchema = z.object({
@@ -119,6 +116,44 @@ const ConfirmRequestSchema = z.object({
   visibility: z.enum(['public', 'private', 'unlisted']).default('public'),
 });
 
+const CollectionInfoSchema = z.object({
+  name: z.string().min(1).max(200),
+  description: z.string().max(50000).optional().default(''),
+  creator: z.string().max(200).optional().default(''),
+  explicitContent: z.boolean().optional().default(false),
+  packageId: z.string().optional().nullable(),
+  packageVersion: z.string().optional().nullable(),
+  entryResourceKind: z.number().int().optional().nullable(),
+  entryResourceId: z.string().optional().nullable(),
+  thumbnailResourceKind: z.number().int().optional().nullable(),
+  thumbnailResourceId: z.string().optional().nullable(),
+  dateCreated: z.string().optional().nullable(),
+  dateModified: z.string().optional().nullable(),
+  thumbnailCharacterId: z.string().optional().nullable(),
+});
+
+const CollectionThumbnailSchema = z.object({
+  characterId: z.string().min(1).max(100),
+  r2Key: R2KeySchema,
+});
+
+const CollectionCardSchema = z.object({
+  characterId: z.string().min(1).max(100),
+  metadata: CardMetadataSchema,
+});
+
+const ConfirmCollectionRequestSchema = z.object({
+  type: z.literal('collection'),
+  sessionId: z.string().uuid(),
+  collection: CollectionInfoSchema,
+  files: z.object({
+    original: z.object({ r2Key: R2KeySchema }),
+    thumbnails: z.array(CollectionThumbnailSchema).min(1).max(1000),
+  }),
+  cards: z.array(CollectionCardSchema).min(1).max(1000),
+  visibility: z.enum(['public', 'private', 'unlisted']).default('public'),
+});
+
 export async function POST(request: NextRequest) {
   try {
     // Require authentication
@@ -151,6 +186,243 @@ export async function POST(request: NextRequest) {
 
     // Parse and validate request body
     const body = await request.json();
+    if (body && body.type === 'collection') {
+      const parsed = ConfirmCollectionRequestSchema.safeParse(body);
+      if (!parsed.success) {
+        return NextResponse.json(
+          { error: 'Invalid request', details: parsed.error.format() },
+          { status: 400 }
+        );
+      }
+
+      const { collection, files, cards, visibility } = parsed.data;
+
+      // Basic consistency: every card must have a thumbnail key
+      const thumbByCharacterId = new Map(files.thumbnails.map(t => [t.characterId, t.r2Key] as const));
+      for (const c of cards) {
+        if (!thumbByCharacterId.has(c.characterId)) {
+          return NextResponse.json(
+            { error: `Missing thumbnail for characterId: ${c.characterId}` },
+            { status: 400 }
+          );
+        }
+      }
+
+      // Reject blocked tags up-front (before moving large files)
+      const tagSet = new Set<string>();
+      for (const c of cards) {
+        for (const t of c.metadata.tags) tagSet.add(t);
+      }
+      tagSet.add('collection');
+      const tagSlugs = [...tagSet].map(tag =>
+        tag.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+      );
+      const blockedTagNames = await checkBlockedTags(tagSlugs);
+      if (blockedTagNames.length > 0) {
+        // Best-effort cleanup of pending uploads
+        await r2.delete(files.original.r2Key);
+        await Promise.allSettled(files.thumbnails.map(t => r2.delete(t.r2Key)));
+        return NextResponse.json(
+          {
+            error: `Upload rejected: Collection contains blocked tags: ${blockedTagNames.join(', ')}`,
+            blockedTags: blockedTagNames,
+          },
+          { status: 400 }
+        );
+      }
+
+      // Verify original file exists in R2
+      const originalObject = await r2.head(files.original.r2Key);
+      if (!originalObject) {
+        return NextResponse.json(
+          { error: 'Original file not found. Upload may have failed or expired.' },
+          { status: 400 }
+        );
+      }
+
+      // Reject duplicates by packageId (upgrade flow not implemented here)
+      if (collection.packageId) {
+        const existing = await getCollectionByPackageId(collection.packageId);
+        if (existing) {
+          // Best-effort cleanup of pending uploads
+          await r2.delete(files.original.r2Key);
+          await Promise.allSettled(files.thumbnails.map(t => r2.delete(t.r2Key)));
+          return NextResponse.json(
+            { error: `Package already uploaded: ${existing.slug}` },
+            { status: 400 }
+          );
+        }
+      }
+
+      const collectionId = generateId();
+      const collectionSlug = await generateCollectionSlug(collection.name);
+
+      // Move original .voxpkg to permanent collection location
+      const permanentOriginalKey = `collections/${collectionId}.voxpkg`;
+      await moveR2Object(r2, files.original.r2Key, permanentOriginalKey);
+      const storageUrl = `r2://${permanentOriginalKey}`;
+
+      // Collections don't support 'private' - map it to unlisted
+      const collectionVisibility = visibility === 'private' ? 'unlisted' : visibility;
+
+      // Determine which character thumbnail to use for collection thumbnail
+      const thumbnailCharacterId =
+        collection.thumbnailCharacterId ||
+        collection.thumbnailResourceId ||
+        cards[0].characterId;
+
+      const collectionThumbKey = thumbByCharacterId.get(thumbnailCharacterId) || thumbByCharacterId.get(cards[0].characterId)!;
+      let collectionThumbPath: string | null = null;
+      let collectionThumbWidth: number | null = null;
+      let collectionThumbHeight: number | null = null;
+
+      try {
+        const thumbObj = await r2.get(collectionThumbKey);
+        if (thumbObj) {
+          const buf = Buffer.from(await thumbObj.arrayBuffer());
+          if (buf.length > 24) {
+            collectionThumbWidth = buf.readUInt32BE(16);
+            collectionThumbHeight = buf.readUInt32BE(20);
+          }
+          const thumbPath = await processThumbnail(new Uint8Array(buf), `collection_${collectionId}`, 'main');
+          collectionThumbPath = `/api/uploads/${thumbPath}`;
+          collectionThumbWidth = 500;
+          collectionThumbHeight = 750;
+        }
+      } catch (error) {
+        console.error('[ConfirmUpload][Collection] Failed to process collection thumbnail:', error);
+        collectionThumbPath = null;
+      }
+
+      // Create collection record
+      await createCollection({
+        id: collectionId,
+        slug: collectionSlug,
+        name: collection.name,
+        description: collection.description || null,
+        creator: collection.creator || null,
+        explicitContent: !!collection.explicitContent,
+        packageId: collection.packageId || null,
+        packageVersion: collection.packageVersion || null,
+        entryResourceKind: collection.entryResourceKind ?? null,
+        entryResourceId: collection.entryResourceId ?? null,
+        thumbnailResourceKind: collection.thumbnailResourceKind ?? null,
+        thumbnailResourceId: collection.thumbnailResourceId ?? null,
+        dateCreated: collection.dateCreated ?? null,
+        dateModified: collection.dateModified ?? null,
+        storageUrl,
+        thumbnailPath: collectionThumbPath,
+        thumbnailWidth: collectionThumbWidth,
+        thumbnailHeight: collectionThumbHeight,
+        uploaderId: session.user.id,
+        visibility: collectionVisibility as 'public' | 'nsfw_only' | 'unlisted' | 'blocked',
+        itemsCount: cards.length,
+      });
+
+      // Create cards
+      let createdCount = 0;
+      for (const c of cards) {
+        const meta = c.metadata;
+        const thumbKey = thumbByCharacterId.get(c.characterId)!;
+
+        // Download the thumbnail bytes (small) so we can generate a PNG + processed webp thumb
+        const thumbObj = await r2.get(thumbKey);
+        if (!thumbObj) continue;
+        const imgBuffer = Buffer.from(await thumbObj.arrayBuffer());
+
+        const cardId = generateId();
+        const slug = generateSlug(meta.name);
+
+        // Move raw thumbnail PNG to a stable location for PNG downloads
+        const imageKey = `${cardId}.png`;
+        await r2.put(imageKey, imgBuffer);
+        await r2.delete(thumbKey);
+
+        const imagePath = isCloudflareRuntime()
+          ? getPublicUrl(`r2://${imageKey}`)
+          : getPublicUrl(`file:///${imageKey}`);
+
+        let imageWidth: number | null = null;
+        let imageHeight: number | null = null;
+        if (imgBuffer.length > 24) {
+          imageWidth = imgBuffer.readUInt32BE(16);
+          imageHeight = imgBuffer.readUInt32BE(20);
+        }
+
+        let thumbnailPath: string | null = null;
+        let thumbnailWidth: number | null = null;
+        let thumbnailHeight: number | null = null;
+
+        try {
+          const thumbPath = await processThumbnail(imgBuffer, cardId, 'main');
+          thumbnailPath = `/api/uploads/${thumbPath}`;
+          thumbnailWidth = 500;
+          thumbnailHeight = 750;
+        } catch (error) {
+          console.error('[ConfirmUpload][Collection] Failed to generate card thumbnail:', error);
+          thumbnailPath = imagePath;
+          thumbnailWidth = imageWidth;
+          thumbnailHeight = imageHeight;
+        }
+
+        const allTags = [...new Set([...meta.tags, 'collection'])];
+
+        try {
+          await createCard({
+            id: cardId,
+            slug,
+            name: meta.name,
+            description: meta.description || null,
+            creator: meta.creator || null,
+            creatorNotes: meta.creatorNotes || null,
+            uploaderId: session.user.id,
+            visibility: collectionVisibility,
+            tagSlugs: allTags,
+            collectionId,
+            collectionItemId: c.characterId,
+            version: {
+              storageUrl, // shared collection .voxpkg
+              contentHash: meta.contentHash,
+              specVersion: meta.specVersion,
+              sourceFormat: meta.sourceFormat,
+              tokens: meta.tokens,
+              hasAltGreetings: meta.metadata.hasAlternateGreetings,
+              altGreetingsCount: meta.metadata.alternateGreetingsCount,
+              hasLorebook: meta.metadata.hasLorebook,
+              lorebookEntriesCount: meta.metadata.lorebookEntriesCount,
+              hasEmbeddedImages: meta.metadata.hasEmbeddedImages,
+              embeddedImagesCount: meta.metadata.embeddedImagesCount,
+              hasAssets: false,
+              assetsCount: 0,
+              savedAssets: null,
+              imagePath,
+              imageWidth,
+              imageHeight,
+              thumbnailPath,
+              thumbnailWidth,
+              thumbnailHeight,
+              cardData: meta.cardData,
+            },
+          });
+          createdCount++;
+        } catch (cardError) {
+          console.error('[ConfirmUpload][Collection] Failed to create card:', cardError);
+        }
+      }
+
+      await cacheDeleteByPrefix(CACHE_PREFIX.CARDS);
+
+      return NextResponse.json({
+        success: true,
+        type: 'collection',
+        data: {
+          id: collectionId,
+          slug: collectionSlug,
+          cardCount: createdCount,
+        },
+      });
+    }
+
     const parsed = ConfirmRequestSchema.safeParse(body);
     if (!parsed.success) {
       return NextResponse.json(
@@ -183,70 +455,24 @@ export async function POST(request: NextRequest) {
     await moveR2Object(r2, files.original.r2Key, permanentOriginalKey);
     const storageUrl = `r2://${permanentOriginalKey}`;
 
-    // SECURITY: Re-parse and validate all metadata server-side
-    // Never trust client-provided tokens, contentHash, or metadata flags
-    console.log('[ConfirmUpload] Re-parsing card for server-side validation');
-
-    // Download the file we just moved
-    const serverOriginal = await r2.get(permanentOriginalKey);
-    if (!serverOriginal) {
-      // Clean up uploaded files and fail
-      await r2.delete(permanentOriginalKey);
-      if (files.icon) await r2.delete(files.icon.r2Key);
+    // IMPORTANT: Avoid re-downloading large uploads back into the Worker.
+    // We accept client-extracted metadata (the upload UI parses locally) and only do cheap server checks.
+    const extToFormat: Record<string, string> = {
+      png: 'png',
+      json: 'json',
+      charx: 'charx',
+      voxpkg: 'voxta',
+    };
+    const originalExt = ext.replace('.', '').toLowerCase();
+    const inferredFormat = extToFormat[originalExt];
+    if (inferredFormat && inferredFormat !== metadata.sourceFormat) {
       return NextResponse.json(
-        { error: 'Failed to retrieve uploaded file for validation' },
-        { status: 500 }
-      );
-    }
-
-    const serverBuffer = Buffer.from(await serverOriginal.arrayBuffer());
-    const serverUint8 = toUint8Array(serverBuffer);
-
-    // Parse card using character-foundry loader
-    let serverParsed;
-    try {
-      serverParsed = parseCard(serverUint8, { extractAssets: false }); // Assets already handled
-    } catch (parseError) {
-      // Clean up uploaded files
-      await r2.delete(permanentOriginalKey);
-      if (files.icon) await r2.delete(files.icon.r2Key);
-      return NextResponse.json(
-        { error: `Invalid card format: ${parseError instanceof Error ? parseError.message : 'parse failed'}` },
+        { error: `File extension (${originalExt}) does not match sourceFormat (${metadata.sourceFormat})` },
         { status: 400 }
       );
     }
 
-    const serverCardData = serverParsed.card.data;
-
-    // Compute server-side values
-    const serverContentHash = computeContentHash(serverBuffer);
-    const serverTokens = countCardTokens(serverCardData);
-    const serverMetadata = extractCardMetadata(serverCardData);
-
-    // Log any mismatches (for monitoring)
-    if (serverContentHash !== metadata.contentHash) {
-      console.warn(`[ConfirmUpload] contentHash mismatch: client=${metadata.contentHash} server=${serverContentHash}`);
-    }
-    if (serverTokens.total !== metadata.tokens.total) {
-      console.warn(`[ConfirmUpload] tokens mismatch: client=${metadata.tokens.total} server=${serverTokens.total}`);
-    }
-
-    // Replace client-provided metadata with server-computed values
-    const validatedMetadata = {
-      ...metadata,
-      contentHash: serverContentHash,  // ✅ Server-computed
-      tokens: serverTokens,              // ✅ Server-computed
-      metadata: {
-        hasAlternateGreetings: serverMetadata.hasAlternateGreetings,  // ✅ Server-computed
-        alternateGreetingsCount: serverMetadata.alternateGreetingsCount,
-        hasLorebook: serverMetadata.hasLorebook,
-        lorebookEntriesCount: serverMetadata.lorebookEntriesCount,
-        hasEmbeddedImages: serverMetadata.hasEmbeddedImages,
-        embeddedImagesCount: serverMetadata.embeddedImagesCount,
-      },
-    };
-
-    // Use validatedMetadata for the rest of the flow (replaces client metadata)
+    const validatedMetadata = metadata;
 
     // Process icon if provided
     let imagePath: string | null = null;
@@ -300,16 +526,16 @@ export async function POST(request: NextRequest) {
     if (files.assets && files.assets.length > 0) {
       for (const asset of files.assets) {
         const assetObject = await r2.get(asset.r2Key);
-        if (assetObject) {
-          const assetBuffer = await assetObject.arrayBuffer();
-          const assetData = Buffer.from(assetBuffer);
-
-          // Move asset to permanent location
-          const permanentAssetKey = `uploads/assets/${cardId}/${asset.name}.${asset.ext}`;
-          await r2.put(permanentAssetKey, assetData);
+        if (assetObject?.body) {
+          // Move asset to permanent, public location
+          const permanentAssetKey = `assets/${cardId}/${asset.name}.${asset.ext}`;
+          await r2.put(permanentAssetKey, assetObject.body, {
+            httpMetadata: assetObject.httpMetadata,
+            customMetadata: assetObject.customMetadata,
+          });
           await r2.delete(asset.r2Key);
 
-          const savedPath = `/api/uploads/uploads/assets/${cardId}/${asset.name}.${asset.ext}`;
+          const savedPath = `/api/uploads/${permanentAssetKey}`;
           savedAssetsData.push({
             name: asset.name,
             type: asset.type,
@@ -405,6 +631,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
+      type: 'card',
       data: {
         id: createdCardId,
         slug,
@@ -434,9 +661,9 @@ async function moveR2Object(
 
   const object = await r2.get(sourceKey);
   if (!object) throw new Error(`Source object not found: ${sourceKey}`);
+  if (!object.body) throw new Error(`Source object missing body: ${sourceKey}`);
 
-  const data = await object.arrayBuffer();
-  await r2.put(destKey, data, {
+  await r2.put(destKey, object.body, {
     httpMetadata: object.httpMetadata,
     customMetadata: object.customMetadata,
   });

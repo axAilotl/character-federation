@@ -2,10 +2,10 @@
  * Client-side card parser using character-foundry packages
  */
 import { parseCard, type ParseResult } from '@character-foundry/character-foundry/loader';
-import { isVoxta, readVoxta } from '@character-foundry/character-foundry/voxta';
-import { toUint8Array } from '@character-foundry/character-foundry/core';
+import { voxtaToCCv3 } from '@character-foundry/character-foundry/voxta';
 import type { CCv3Data, CCv3CharacterBook } from '@character-foundry/character-foundry/schemas';
 import { countCardTokens, type TokenCounts } from './tokenizer';
+import { extractZipEntry, indexZip, type ZipEntry } from './zip';
 
 export type SourceFormat = 'png' | 'json' | 'charx' | 'voxta';
 
@@ -58,6 +58,10 @@ export interface ParseResultWithAssets {
   packageCharCount?: number;
   /** Package name (for multi-char Voxta) */
   packageName?: string;
+  /** Voxta package.json (if present) */
+  voxtaPackageJson?: unknown;
+  /** Parsed characters for Voxta packages (used for collection uploads) */
+  voxtaCharacters?: Array<{ id: string; card: ParsedCard; thumbnail?: Uint8Array }>;
 }
 
 // Use shared utility for counting embedded images
@@ -117,6 +121,220 @@ function toParsedCard(result: ParseResult): ParsedCard {
   };
 }
 
+function toParsedCardFromCcv3(raw: CCv3Data, sourceFormat: SourceFormat): ParsedCard {
+  const data = raw.data;
+
+  const tokens = countCardTokens(data);
+  const metadata = extractCardMetadata(data);
+
+  return {
+    raw,
+    specVersion: raw.spec === 'chara_card_v2' ? 'v2' : 'v3',
+    sourceFormat,
+    name: data.name || 'Unknown',
+    description: data.description || '',
+    personality: data.personality || '',
+    scenario: data.scenario || '',
+    firstMessage: data.first_mes || '',
+    messageExample: data.mes_example || '',
+    creatorNotes: data.creator_notes || '',
+    systemPrompt: data.system_prompt || '',
+    postHistoryInstructions: data.post_history_instructions || '',
+    alternateGreetings: data.alternate_greetings || [],
+    tags: data.tags || [],
+    creator: data.creator || '',
+    characterVersion: data.character_version || '',
+    tokens,
+    metadata,
+    lorebook: data.character_book,
+  };
+}
+
+function isImageExt(ext: string): boolean {
+  const e = ext.toLowerCase();
+  return e === 'png' || e === 'jpg' || e === 'jpeg' || e === 'webp' || e === 'gif';
+}
+
+function getExtFromPath(path: string): string {
+  const lastDot = path.lastIndexOf('.');
+  if (lastDot === -1) return '';
+  return path.slice(lastDot + 1).toLowerCase();
+}
+
+function getBaseName(path: string): string {
+  const parts = path.split('/');
+  return parts[parts.length - 1] || path;
+}
+
+function getNameWithoutExt(filename: string): string {
+  return filename.replace(/\.[^.]+$/, '');
+}
+
+function normalizeAssetName(path: string, fallbackIndex: number): string {
+  const base = getNameWithoutExt(getBaseName(path));
+  const safe = base.replace(/[^a-zA-Z0-9-_]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 80);
+  return safe || `asset_${fallbackIndex}`;
+}
+
+function sampleZipAssets(
+  zip: Uint8Array,
+  entries: ZipEntry[],
+  opts: {
+    include: (entry: ZipEntry) => boolean;
+    maxItems: number;
+    maxTotalBytes: number;
+  }
+): ExtractedAsset[] {
+  const selected = entries.filter(opts.include);
+
+  // Stable order (avoid random central-dir ordering differences)
+  selected.sort((a, b) => a.name.localeCompare(b.name));
+
+  const extracted: ExtractedAsset[] = [];
+  let totalBytes = 0;
+
+  for (let i = 0; i < selected.length; i++) {
+    if (extracted.length >= opts.maxItems) break;
+
+    const entry = selected[i];
+    if (totalBytes >= opts.maxTotalBytes) break;
+    // Use central-directory uncompressed size to avoid inflating a file we won't keep.
+    if (totalBytes + entry.uncompressedSize > opts.maxTotalBytes) break;
+
+    const ext = getExtFromPath(entry.name);
+    const name = normalizeAssetName(entry.name, i);
+    const buffer = extractZipEntry(zip, entry);
+
+    totalBytes += buffer.byteLength;
+
+    extracted.push({
+      name,
+      type: isImageExt(ext) ? 'image' : 'asset',
+      ext: ext || 'bin',
+      buffer,
+      path: entry.name,
+    });
+  }
+
+  return extracted;
+}
+
+function parseCharxFromZip(zip: Uint8Array): ParseResultWithAssets {
+  const entries = indexZip(zip);
+
+  const cardEntry = entries.find((e) => e.name === 'card.json');
+  if (!cardEntry) {
+    throw new Error('CharX: Missing card.json');
+  }
+
+  const cardJson = extractZipEntry(zip, cardEntry);
+  const raw = JSON.parse(new TextDecoder().decode(cardJson)) as CCv3Data;
+
+  const card = toParsedCardFromCcv3(raw, 'charx');
+
+  // Main image: first icon-like asset
+  const iconEntry = entries.find(
+    (e) => e.name.toLowerCase().startsWith('assets/icon/') && isImageExt(getExtFromPath(e.name))
+  );
+  const mainImage = iconEntry ? extractZipEntry(zip, iconEntry) : undefined;
+
+  // Sample non-icon assets for preview
+  const extractedAssets = sampleZipAssets(zip, entries, {
+    include: (e) =>
+      e.name.toLowerCase().startsWith('assets/') &&
+      !e.name.toLowerCase().startsWith('assets/icon/') &&
+      isImageExt(getExtFromPath(e.name)),
+    maxItems: 100,
+    maxTotalBytes: 100 * 1024 * 1024,
+  });
+
+  return {
+    card,
+    extractedAssets,
+    mainImage,
+  };
+}
+
+function parseVoxtaFromZip(zip: Uint8Array): ParseResultWithAssets {
+  const entries = indexZip(zip);
+
+  const pkgEntry = entries.find((e) => e.name === 'package.json');
+  const voxtaPackageJson = pkgEntry ? JSON.parse(new TextDecoder().decode(extractZipEntry(zip, pkgEntry))) : undefined;
+
+  const charEntries = entries.filter((e) => /^Characters\/[^/]+\/character\.json$/i.test(e.name));
+  if (charEntries.length === 0) {
+    throw new Error('Voxta: No Characters/*/character.json entries found');
+  }
+
+  const voxtaCharacters: Array<{ id: string; card: ParsedCard; thumbnail?: Uint8Array }> = [];
+
+  for (const entry of charEntries) {
+    const match = /^Characters\/([^/]+)\/character\.json$/i.exec(entry.name);
+    if (!match) continue;
+    const id = match[1];
+
+    const jsonBytes = extractZipEntry(zip, entry);
+    const voxtaChar = JSON.parse(new TextDecoder().decode(jsonBytes)) as unknown;
+    const ccv3 = voxtaToCCv3(voxtaChar as never, []);
+
+    const card = toParsedCardFromCcv3(ccv3 as unknown as CCv3Data, 'voxta');
+
+    const thumbEntry = entries.find(
+      (e) =>
+        e.name.toLowerCase().startsWith(`characters/${id.toLowerCase()}/thumbnail.`) &&
+        isImageExt(getExtFromPath(e.name))
+    );
+    const thumbnail = thumbEntry ? extractZipEntry(zip, thumbEntry) : undefined;
+
+    voxtaCharacters.push({ id, card, thumbnail });
+  }
+
+  if (voxtaCharacters.length === 0) {
+    throw new Error('Voxta: Failed to extract characters');
+  }
+
+  const isMultiCharPackage = voxtaCharacters.length >= 2;
+
+  // Pick a thumbnail character for preview (ThumbnailResource.Id preferred)
+  let thumbCharId: string | null = null;
+  const pkg = voxtaPackageJson as { ThumbnailResource?: { Id?: string } | null; Name?: string | null } | undefined;
+  if (pkg?.ThumbnailResource?.Id) {
+    thumbCharId = pkg.ThumbnailResource.Id;
+  }
+  if (!thumbCharId) {
+    thumbCharId = voxtaCharacters[0].id;
+  }
+
+  const previewChar = voxtaCharacters.find((c) => c.id === thumbCharId) || voxtaCharacters[0];
+  const packageName = (pkg?.Name || `${voxtaCharacters.length} Characters`) as string;
+
+  // Sample assets only for single-character packages
+  const extractedAssets = !isMultiCharPackage
+    ? sampleZipAssets(zip, entries, {
+        include: (e) => {
+          const onlyId = voxtaCharacters[0].id.toLowerCase();
+          return (
+            e.name.toLowerCase().startsWith(`characters/${onlyId}/assets/`) &&
+            isImageExt(getExtFromPath(e.name))
+          );
+        },
+        maxItems: 100,
+        maxTotalBytes: 100 * 1024 * 1024,
+      })
+    : [];
+
+  return {
+    card: previewChar.card,
+    extractedAssets,
+    mainImage: previewChar.thumbnail,
+    isMultiCharPackage,
+    packageCharCount: voxtaCharacters.length,
+    packageName,
+    voxtaPackageJson,
+    voxtaCharacters,
+  };
+}
+
 /**
  * Parse a character card from any supported format (client-side)
  */
@@ -128,64 +346,19 @@ export function parseFromBuffer(buffer: Uint8Array): ParsedCard {
 /**
  * Parse a character card and extract all binary assets
  */
-export function parseFromBufferWithAssets(buffer: Uint8Array): ParseResultWithAssets {
-  const uint8 = toUint8Array(buffer);
+export function parseFromBufferWithAssets(buffer: Uint8Array, filename?: string): ParseResultWithAssets {
+  const lower = (filename || '').toLowerCase();
 
-  // Check for multi-character Voxta package FIRST
-  // These need special handling - server creates a collection instead of single card
-  if (isVoxta(uint8)) {
-    try {
-      const voxtaData = readVoxta(uint8, { maxFileSize: 50 * 1024 * 1024 });
-      // Multi-character packages should create collections
-      // Note: Some Voxta exports don't have package.json (exportType: 'character')
-      if (voxtaData.characters.length >= 2) {
-        // Multi-char package - return minimal info, let server handle it
-        // We still parse the first char for preview purposes
-        const result = parseCard(uint8, { extractAssets: true });
-        const card = toParsedCard(result);
-
-        // Get main image from ThumbnailResource if specified, otherwise first character
-        // ThumbnailResource.Kind: 3 = Character
-        let mainImage: Uint8Array | undefined;
-        const pkg = voxtaData.package;
-
-        if (pkg?.ThumbnailResource?.Id) {
-          // Look up the character specified by ThumbnailResource
-          const thumbChar = voxtaData.characters.find(c => c.id === pkg.ThumbnailResource!.Id);
-          if (thumbChar?.thumbnail) {
-            mainImage = thumbChar.thumbnail instanceof Uint8Array
-              ? thumbChar.thumbnail
-              : new Uint8Array(thumbChar.thumbnail as ArrayBuffer);
-            console.log(`[card-parser] Using ThumbnailResource character ${pkg.ThumbnailResource.Id} for preview`);
-          }
-        }
-
-        // Fallback to main icon from parseCard result
-        if (!mainImage) {
-          const mainAsset = result.assets.find(a => a.isMain && a.type === 'icon');
-          if (mainAsset?.data) {
-            mainImage = mainAsset.data instanceof Uint8Array
-              ? mainAsset.data
-              : new Uint8Array(mainAsset.data as ArrayBuffer);
-          }
-        }
-
-        return {
-          card,
-          extractedAssets: [],
-          mainImage,
-          isMultiCharPackage: true,
-          packageCharCount: voxtaData.characters.length,
-          packageName: voxtaData.package?.Name || `${voxtaData.characters.length} Characters`,
-        };
-      }
-    } catch (error) {
-      // Log error for debugging, then fall through to normal parsing
-      console.error('[card-parser] Multi-char Voxta detection failed:', error);
-    }
+  // Prefer extension-based routing for ZIP containers to avoid extracting thousands of assets.
+  if (lower.endsWith('.charx')) {
+    return parseCharxFromZip(buffer);
+  }
+  if (lower.endsWith('.voxpkg')) {
+    return parseVoxtaFromZip(buffer);
   }
 
-  const result = parseCard(uint8, { extractAssets: true });
+  // Fallback: use the loader for PNG/JSON and unknown containers.
+  const result = parseCard(buffer, { extractAssets: true });
 
   const card = toParsedCard(result);
 

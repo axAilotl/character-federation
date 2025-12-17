@@ -621,6 +621,63 @@ This is a security-critical feature. It should be:
 
 ---
 
+## Issue #6: Selective ZIP Extraction (Central Directory Index)
+
+**Repository:** `character-foundry/character-foundry` (core package, or new `zip` package)
+**Labels:** `enhancement`, `performance`, `api`
+
+### Title
+feat(core): Add ZIP central directory index + selective entry extraction
+
+### Body
+
+## Summary
+Add a small ZIP utility that can index the central directory and extract *specific* entries without inflating the entire archive.
+
+## Background
+Large `.charx` / `.voxpkg` uploads can be 100–400MB and contain thousands of assets. Many apps only need:
+- `.charx`: `card.json` + optional sampled preview assets
+- `.voxpkg`: `Characters/*/character.json` + `Characters/*/thumbnail.*` (multi-character packages can skip assets entirely)
+
+Streaming unzip approaches (e.g. iterating all entries) still inflate every file, which is slow and can exceed browser/Worker memory.
+
+CardsHub currently implements a minimal reader at `src/lib/client/zip.ts` that:
+- Finds the End Of Central Directory (EOCD)
+- Indexes entries from the central directory
+- Inflates only requested entries (method 0 stored, method 8 deflate)
+
+## Proposed API
+
+```ts
+export type ZipEntry = {
+  name: string;
+  compressionMethod: number; // 0 (stored) | 8 (deflate)
+  compressedSize: number;
+  uncompressedSize: number;
+  localHeaderOffset: number;
+};
+
+/** Returns all central-directory entries (stable ordering left to caller). */
+export function indexZip(buffer: Uint8Array): ZipEntry[];
+
+/** Extracts a single entry using central-directory metadata. */
+export function extractZipEntry(buffer: Uint8Array, entry: ZipEntry): Uint8Array;
+```
+
+## Design Constraints
+- **Minimal** by default (suitable for browser + Workers)
+- No ZIP64 initially (explicit error)
+- No encryption support
+- No archive-wide extraction (single-entry only)
+- Supports compression methods: **0** (stored), **8** (deflate)
+
+## Testing
+- Unit tests against known-good fixtures (stored + deflate)
+- Validation that extracted bytes match standard unzip libraries for same entry
+- Regression tests for EOCD search + central directory parsing edge cases (comments, ordering)
+
+---
+
 ## Filing Instructions
 
 1. Go to https://github.com/character-foundry/character-foundry/issues/new
@@ -638,3 +695,4 @@ This is a security-critical feature. It should be:
 | Metadata Validation | loader | [x] | [#13](https://github.com/character-foundry/character-foundry/issues/13) | Open |
 | ImageService | media (existing #9) | [x] | [#9 comment](https://github.com/character-foundry/character-foundry/issues/9#issuecomment-3633858165) | Open |
 | HTTP Signatures | federation | [x] | [#12](https://github.com/character-foundry/character-foundry/issues/12) | Open |
+| Selective ZIP extraction | core / new package | [ ] |  | Draft |

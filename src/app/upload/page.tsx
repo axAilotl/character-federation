@@ -9,7 +9,6 @@ import type { ParseResultWithAssets } from '@/lib/client/card-parser';
 // Dynamic imports to avoid SSR bundling issues
 const getCardParser = () => import('@/lib/client/card-parser');
 const getPresignedUpload = () => import('@/lib/client/presigned-upload');
-const getChunkedUpload = () => import('@/lib/client/chunked-upload');
 
 interface ParseState {
   status: 'idle' | 'parsing' | 'parsed' | 'error';
@@ -17,7 +16,7 @@ interface ParseState {
   error?: string;
 }
 
-type UploadStage = 'preparing' | 'presigning' | 'uploading' | 'confirming' | 'processing' | 'chunking' | null;
+type UploadStage = 'preparing' | 'presigning' | 'uploading' | 'confirming' | 'processing' | null;
 type CardVisibility = 'public' | 'private' | 'unlisted';
 
 const VISIBILITY_OPTIONS: { value: CardVisibility; label: string; description: string }[] = [
@@ -25,6 +24,18 @@ const VISIBILITY_OPTIONS: { value: CardVisibility; label: string; description: s
   { value: 'unlisted', label: 'Unlisted', description: 'Only accessible via direct link' },
   { value: 'private', label: 'Private', description: 'Only visible to you' },
 ];
+
+function formatBytes(bytes: number): string {
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'] as const;
+  let value = bytes;
+  let unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex++;
+  }
+  const decimals = unitIndex === 0 ? 0 : 1;
+  return `${value.toFixed(decimals)} ${units[unitIndex]}`;
+}
 
 export default function UploadPage() {
   const router = useRouter();
@@ -36,11 +47,9 @@ export default function UploadPage() {
   const [uploadStage, setUploadStage] = useState<UploadStage>(null);
   const [error, setError] = useState<string | null>(null);
   const [parseState, setParseState] = useState<ParseState>({ status: 'idle' });
+  const [contentHash, setContentHash] = useState<string | null>(null);
   const [visibility, setVisibility] = useState<CardVisibility>('public');
-  // DISABLED: Presigned uploads are broken in multiple ways (wrong paths, no collection support, asset issues)
-  // Force all uploads through FormData which actually works
-  // TODO: Re-enable with proper large file support when fixed
-  const [usePresigned] = useState<boolean>(false);
+  const [usePresigned] = useState<boolean>(true);
   const [currentUploadFile, setCurrentUploadFile] = useState<string | null>(null);
 
   const handleDrag = useCallback((e: React.DragEvent) => {
@@ -81,6 +90,7 @@ export default function UploadPage() {
   const handleFile = async (selectedFile: File) => {
     setError(null);
     setParseState({ status: 'idle' });
+    setContentHash(null);
 
     // Validate file type
     const validExtensions = ['.png', '.json', '.charx', '.voxpkg'];
@@ -90,10 +100,10 @@ export default function UploadPage() {
       return;
     }
 
-    // No file size limit - large files use chunked upload
+    // No file size limit - full file uploads go direct-to-R2 via presigned URLs.
     // Show warning for very large files (>500MB)
     if (selectedFile.size > 500 * 1024 * 1024) {
-      console.log(`Large file detected: ${(selectedFile.size / 1024 / 1024).toFixed(1)}MB - will use chunked upload`);
+      console.log(`Large file detected: ${(selectedFile.size / 1024 / 1024).toFixed(1)}MB - direct-to-R2 upload`);
     }
 
     setFile(selectedFile);
@@ -107,9 +117,13 @@ export default function UploadPage() {
 
       // Parse card entirely client-side (dynamic import to avoid SSR bundling issues)
       const { parseFromBufferWithAssets } = await getCardParser();
-      const result = parseFromBufferWithAssets(buffer);
+      const result = parseFromBufferWithAssets(buffer, selectedFile.name);
 
       setParseState({ status: 'parsed', result });
+
+      // Compute content hash once (avoid re-reading large files on upload)
+      const { computeContentHash } = await getCardParser();
+      setContentHash(await computeContentHash(buffer));
 
       // Generate preview from main image if available
       if (result.mainImage) {
@@ -137,6 +151,10 @@ export default function UploadPage() {
 
   const handleUpload = async () => {
     if (!file || parseState.status !== 'parsed' || !parseState.result) return;
+    if (!contentHash) {
+      setError('Missing content hash (please re-select the file)');
+      return;
+    }
 
     setIsUploading(true);
     setUploadProgress(0);
@@ -145,68 +163,8 @@ export default function UploadPage() {
     setCurrentUploadFile(null);
 
     try {
-      const arrayBuffer = await file.arrayBuffer();
-      const buffer = new Uint8Array(arrayBuffer);
-
-      // Compute content hash client-side (dynamic import)
-      const { computeContentHash } = await getCardParser();
-      const contentHash = await computeContentHash(buffer);
-
-      // Check if we should use chunked upload for large files
-      const { shouldUseChunkedUpload, uploadChunked } = await getChunkedUpload();
-
-      // Use chunked upload for large files (>=10MB)
-      // Note: Multi-char packages will upload the file successfully but may need collection handling in /api/uploads/complete
-      if (shouldUseChunkedUpload(file.size)) {
-        setUploadStage('chunking');
-
-        const result = await uploadChunked(
-          file,
-          parseState.result,
-          visibility,
-          contentHash,
-          (progress) => {
-            switch (progress.stage) {
-              case 'creating':
-                setUploadStage('preparing');
-                setUploadProgress(progress.percent);
-                break;
-              case 'uploading':
-                setUploadStage('chunking');
-                setUploadProgress(progress.percent);
-                setCurrentUploadFile(
-                  progress.currentChunk && progress.totalChunks
-                    ? `chunk ${progress.currentChunk}/${progress.totalChunks}`
-                    : null
-                );
-                break;
-              case 'completing':
-                setUploadStage('confirming');
-                setUploadProgress(progress.percent);
-                break;
-              case 'done':
-                setUploadStage('processing');
-                setUploadProgress(100);
-                break;
-              case 'error':
-                throw new Error(progress.error || 'Upload failed');
-            }
-          }
-        );
-
-        if (result.success && result.slug) {
-          router.push(`/card/${result.slug}`);
-        } else {
-          throw new Error(result.error || 'Upload failed');
-        }
-        return;
-      }
-
-      // Use presigned URLs for single-character PNG/JSON/CharX uploads when available
-      // ALL Voxta packages use FormData - server handles multi-char detection and collections
-      // (Client-side multi-char detection was unreliable, causing collections to not be created)
-      const isVoxtaPackage = parseState.result.card.sourceFormat === 'voxta';
-      if (usePresigned && !parseState.result.isMultiCharPackage && !isVoxtaPackage) {
+      // Use presigned URLs for all uploads (original file goes direct-to-R2, Worker only does metadata confirm)
+      if (usePresigned) {
         const { uploadWithPresignedUrls } = await getPresignedUpload();
 
         const result = await uploadWithPresignedUrls(
@@ -240,7 +198,7 @@ export default function UploadPage() {
         );
 
         if (result.success && result.slug) {
-          router.push(`/card/${result.slug}`);
+          router.push(result.isCollection ? `/collection/${result.slug}` : `/card/${result.slug}`);
         } else {
           throw new Error(result.error || 'Upload failed');
         }
@@ -402,7 +360,7 @@ export default function UploadPage() {
               <div>
                 <p className="font-semibold">{parsedCard?.name || file.name}</p>
                 <p className="text-sm text-starlight/60">
-                  {(file.size / 1024).toFixed(1)} KB
+                  {formatBytes(file.size)}
                 </p>
               </div>
 
@@ -534,7 +492,7 @@ export default function UploadPage() {
               </div>
 
               <p className="text-xs text-starlight/40">
-                Large files supported (uses chunked upload)
+                Large files supported (direct-to-R2 upload)
               </p>
             </div>
           )}
@@ -594,10 +552,6 @@ export default function UploadPage() {
                   <span className="text-starlight/80">
                     {uploadStage === 'preparing' && 'Preparing upload...'}
                     {uploadStage === 'presigning' && 'Getting upload URLs...'}
-                    {uploadStage === 'chunking' && (currentUploadFile
-                      ? `Uploading ${currentUploadFile}... ${uploadProgress}%`
-                      : `Uploading large file... ${uploadProgress}%`
-                    )}
                     {uploadStage === 'uploading' && (currentUploadFile
                       ? `Uploading ${currentUploadFile}... ${uploadProgress}%`
                       : `Uploading file... ${uploadProgress}%`

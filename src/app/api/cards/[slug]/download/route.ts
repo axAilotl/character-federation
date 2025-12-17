@@ -73,6 +73,21 @@ async function getFileFromStorage(storagePath: string): Promise<Buffer | null> {
   return readFileSync(fullPath);
 }
 
+/**
+ * Stream file from storage (Cloudflare/R2 only)
+ */
+async function getFileStreamFromStorage(storagePath: string): Promise<{ body: ReadableStream; size?: number } | null> {
+  if (!isCloudflareRuntime()) return null;
+  const r2 = await getR2();
+  if (!r2) return null;
+
+  const key = storagePath.replace(/^(file:\/\/\/|r2:\/\/)/, '');
+  const object = await r2.get(key);
+  if (!object?.body) return null;
+
+  return { body: object.body, size: object.size };
+}
+
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
     const { slug } = await params;
@@ -120,17 +135,31 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
       // For voxta collection cards, fall through to PNG download
       // (storage_url points to the whole .voxpkg, not individual character)
-      if (ext !== 'voxpkg') {
+      if (ext !== 'voxpkg' || !card.collectionId) {
+        const mimeTypes: Record<string, string> = {
+          png: 'image/png',
+          charx: 'application/zip',
+          json: 'application/json',
+          voxpkg: 'application/zip',
+        };
+        const contentType = mimeTypes[ext] || 'application/octet-stream';
+
+        const stream = await getFileStreamFromStorage(version.storage_url);
+        if (stream) {
+          return new NextResponse(stream.body, {
+            headers: {
+              'Content-Type': contentType,
+              'Content-Disposition': `attachment; filename="${card.slug}.${ext}"`,
+              ...(typeof stream.size === 'number' ? { 'Content-Length': stream.size.toString() } : {}),
+            },
+          });
+        }
+
         const fileBuffer = await getFileFromStorage(version.storage_url);
         if (fileBuffer) {
-          const mimeTypes: Record<string, string> = {
-            'png': 'image/png',
-            'charx': 'application/octet-stream',
-            'json': 'application/json',
-          };
           return new NextResponse(new Uint8Array(fileBuffer), {
             headers: {
-              'Content-Type': mimeTypes[ext] || 'application/octet-stream',
+              'Content-Type': contentType,
               'Content-Disposition': `attachment; filename="${card.slug}.${ext}"`,
             },
           });
@@ -141,14 +170,23 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     // PNG download - try to get stored file first
     if (version?.storage_url) {
-      const fileBuffer = await getFileFromStorage(version.storage_url);
+      const ext = version.storage_url.split('.').pop()?.toLowerCase() || 'png';
 
-      if (fileBuffer) {
-        const ext = version.storage_url.split('.').pop()?.toLowerCase() || 'png';
+      // If the stored file is already a PNG, return it as-is (streaming when possible)
+      if (ext === 'png') {
+        const stream = await getFileStreamFromStorage(version.storage_url);
+        if (stream) {
+          return new NextResponse(stream.body, {
+            headers: {
+              'Content-Type': 'image/png',
+              'Content-Disposition': `attachment; filename="${card.slug}.png"`,
+              ...(typeof stream.size === 'number' ? { 'Content-Length': stream.size.toString() } : {}),
+            },
+          });
+        }
 
-        // If the stored file is already a PNG, return it as-is
-        // (it should already have the character data embedded)
-        if (ext === 'png') {
+        const fileBuffer = await getFileFromStorage(version.storage_url);
+        if (fileBuffer) {
           return new NextResponse(new Uint8Array(fileBuffer), {
             headers: {
               'Content-Type': 'image/png',
