@@ -8,11 +8,14 @@ export async function middleware(request: NextRequest) {
 
   // Skip maintenance check for:
   // - Admin routes (admins can always access)
+  // - Login and auth routes (needed for admin login during maintenance)
   // - API routes (except non-admin API calls)
   // - Static files
   // - Maintenance page itself
   if (
     pathname.startsWith('/admin') ||
+    pathname.startsWith('/login') ||
+    pathname.startsWith('/api/auth') ||
     pathname.startsWith('/_next') ||
     pathname.startsWith('/favicon') ||
     pathname.startsWith('/icon') ||
